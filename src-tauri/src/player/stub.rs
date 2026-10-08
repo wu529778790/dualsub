@@ -2,6 +2,7 @@
 //! （Windows: mpv 子 HWND 嵌入；Linux X11: subwindow；Wayland: 独立窗口降级）
 
 use serde::Serialize;
+use tauri::Manager;
 
 #[derive(Default)]
 pub struct PlayerState {}

@@ -19,8 +19,10 @@ jobs:
             bundles: nsis
     runs-on: ${{ matrix.os }}
     env:
-      # whisper.cpp 需要 filesystem 特性（macOS 10.15+）
+      # whisper.cpp 需要 filesystem 特性（macOS 10.15+）；
+      # whisper-rs-sys 会把 CMAKE_* 环境变量透传给 cmake（cmake crate 不读 MACOSX_*）
       MACOSX_DEPLOYMENT_TARGET: "11.0"
+      CMAKE_OSX_DEPLOYMENT_TARGET: "11.0"
     steps:
       - uses: actions/checkout@v4
 
