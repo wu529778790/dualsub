@@ -32,6 +32,7 @@ enum Engine {
 }
 
 impl Engine {
+    #[allow(dead_code)]
     fn from_str(s: &str) -> Self {
         match s {
             "online" => Engine::OnlineOnly,
@@ -42,20 +43,11 @@ impl Engine {
 }
 
 fn engine_setting() -> Engine {
-    let path = settings_file();
-    if let Ok(bytes) = std::fs::read(path) {
-        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-            if let Some(s) = v["mt_engine"].as_str() {
-                return Engine::from_str(s);
-            }
-        }
+    match crate::settings::read("mt_engine").as_deref() {
+        Some("online") => Engine::OnlineOnly,
+        Some("local") => Engine::LocalOnly,
+        _ => Engine::Auto,
     }
-    Engine::Auto
-}
-
-fn settings_file() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_default();
-    PathBuf::from(home).join(".dualsub/settings.json")
 }
 
 /// 从环境变量构造代理（ureq 2.12 的系统代理 API 未公开，自行实现）
@@ -177,19 +169,13 @@ pub fn shutdown(app: &AppHandle) {
 
 // ---------- 引擎设置命令 ----------
 #[tauri::command]
-pub fn cmd_mt_set_engine(engine: String) -> Result<(), String> {
+pub fn cmd_mt_set_engine(app: AppHandle, engine: String) -> Result<(), String> {
     if !matches!(engine.as_str(), "auto" | "online" | "local") {
         return Err(format!("未知引擎: {engine}"));
     }
     // 重置不可用标记：切引擎给一次重新尝试的机会
-    let path = settings_file();
-    let mut v = std::fs::read(&path)
-        .ok()
-        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
-        .unwrap_or_else(|| serde_json::json!({}));
-    v["mt_engine"] = serde_json::json!(engine);
-    std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
-    std::fs::write(&path, serde_json::to_string(&v).unwrap()).map_err(|e| e.to_string())?;
+    crate::settings::write("mt_engine", &engine)?;
+    app.state::<MtState>().unavailable.store(false, Ordering::Relaxed);
     eprintln!("[mt] 翻译引擎 → {engine}");
     Ok(())
 }
@@ -438,23 +424,43 @@ fn pick_port() -> Option<u16> {
 }
 
 // ---------- 翻译请求 ----------
-fn translate_batch(port: u16, lines: &[&str]) -> Result<Vec<String>, String> {
-    let url = format!("http://127.0.0.1:{port}/v1/chat/completions");
-    // 编号映射：小模型守不住「行数一致」，用编号对齐更稳
+/// 按模型族构建 prompt：Hunyuan-MT 用官方模板（MT 专用模型），通用小模型用编号系统提示
+fn build_messages(model_name: &str, lines: &[&str]) -> serde_json::Value {
     let numbered: Vec<String> =
         lines.iter().enumerate().map(|(i, l)| format!("{}. {}", i + 1, l)).collect();
-    let body = serde_json::json!({
-        "messages": [
-            {
-                "role": "system",
-                "content": "你是专业的字幕翻译引擎。用户会给出若干条带编号的字幕行。把每行字幕翻译成简体中文，输出时保留每行开头的编号数字并替换 N 为实际数字（例：输入「1. hello」输出「1. 你好」）。一行一条，不要解释、不要引号。"
-            },
-            { "role": "user", "content": numbered.join("\n") }
-        ],
-        "temperature": 0.2,
-        "max_tokens": 1024,
-        "stream": false
-    });
+    let user_text = numbered.join("\n");
+    if model_name.to_lowercase().contains("hunyuan") {
+        // Hunyuan-MT 官方模板（无 system 角色）
+        serde_json::json!({
+            "messages": [
+                { "role": "user", "content": format!("把下面的文本翻译成简体中文，不要额外解释。\n{user_text}") }
+            ],
+            "temperature": 0.2,
+            "max_tokens": 1024,
+            "stream": false
+        })
+    } else {
+        serde_json::json!({
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "你是专业的字幕翻译引擎。用户会给出若干条带编号的字幕行。把每行字幕翻译成简体中文，输出时保留每行开头的编号数字并替换 N 为实际数字（例：输入「1. hello」输出「1. 你好」）。一行一条，不要解释、不要引号。"
+                },
+                { "role": "user", "content": user_text }
+            ],
+            "temperature": 0.2,
+            "max_tokens": 1024,
+            "stream": false
+        })
+    }
+}
+
+fn translate_batch(port: u16, lines: &[&str]) -> Result<Vec<String>, String> {
+    let url = format!("http://127.0.0.1:{port}/v1/chat/completions");
+    let model_name = find_model()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_default();
+    let body = build_messages(&model_name, lines);
     let resp = ureq::post(&url)
         .timeout(Duration::from_secs(180))
         .set("Content-Type", "application/json")

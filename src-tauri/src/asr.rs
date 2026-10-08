@@ -151,7 +151,12 @@ fn worker(app: AppHandle, rx: Receiver<Msg>) {
 
 fn find_model() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
-    let p = PathBuf::from(home).join(".dualsub/models/ggml-small.bin");
+    let tier = crate::settings::read("whisper_model").unwrap_or_else(|| "small".into());
+    let file = match tier.as_str() {
+        "base" => "ggml-base.bin",
+        _ => "ggml-small.bin",
+    };
+    let p = PathBuf::from(home).join(format!(".dualsub/models/{file}"));
     p.is_file().then_some(p)
 }
 

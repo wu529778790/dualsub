@@ -27,19 +27,77 @@ impl Default for ModelsState {
 struct ModelSpec {
     /// hf-mirror 直链（国内可达优先）
     url: &'static str,
-    /// 落盘文件名（mt.rs find_model 按此查找）
+    /// 落盘文件名（asr/mt 按此查找）
     dest: &'static str,
+    /// 展示描述
+    desc: &'static str,
 }
 
 /// 内置模型清单（方案 §4.3：JSON 配置内置，可随版本更新）
 fn spec(name: &str) -> Option<ModelSpec> {
     match name {
+        "whisper-base" => Some(ModelSpec {
+            url: "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
+            dest: "ggml-base.bin",
+            desc: "语音识别·快速档（~142MB，低配机推荐）",
+        }),
+        "whisper-small" => Some(ModelSpec {
+            url: "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
+            dest: "ggml-small.bin",
+            desc: "语音识别·均衡档（~466MB，默认）",
+        }),
         "translation" => Some(ModelSpec {
             url: "https://hf-mirror.com/imikeliu/Hunyuan-MT-7B-Q4_K_M-GGUF/resolve/main/hunyuan-mt-7b-q4_k_m.gguf",
             dest: "translation.gguf",
+            desc: "本地翻译·混元 MT 7B（~4.4GB，全离线无屏蔽）",
         }),
         _ => None,
     }
+}
+
+/// 全部已知模型（状态页展示顺序）
+const KNOWN_MODELS: [&str; 3] = ["whisper-small", "whisper-base", "translation"];
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelStatus {
+    name: String,
+    desc: String,
+    installed: bool,
+    size_mb: f64,
+}
+
+#[tauri::command]
+pub fn cmd_model_status() -> Result<Vec<ModelStatus>, String> {
+    let dir = models_dir()?;
+    let mut out = Vec::new();
+    for name in KNOWN_MODELS {
+        let Some(spec) = spec(name) else { continue };
+        let p = dir.join(spec.dest);
+        let size_mb = p
+            .metadata()
+            .map(|m| m.len() as f64 / 1048576.0)
+            .unwrap_or(0.0);
+        out.push(ModelStatus {
+            name: name.to_string(),
+            desc: spec.desc.to_string(),
+            installed: p.is_file(),
+            size_mb: (size_mb * 10.0).round() / 10.0,
+        });
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+pub fn cmd_model_delete(name: String) -> Result<(), String> {
+    let dir = models_dir()?;
+    let spec = spec(&name).ok_or(format!("未知模型: {name}"))?;
+    let p = dir.join(spec.dest);
+    if p.is_file() {
+        std::fs::remove_file(&p).map_err(|e| e.to_string())?;
+        eprintln!("[models] 已删除 {}", p.display());
+    }
+    Ok(())
 }
 
 #[derive(Clone, Serialize)]

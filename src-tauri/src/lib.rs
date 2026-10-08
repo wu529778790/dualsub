@@ -2,6 +2,7 @@ mod asr;
 mod models;
 mod mt;
 mod player;
+mod settings;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -23,6 +24,10 @@ pub fn run() {
             mt::cmd_mt_set_engine,
             mt::cmd_mt_get_engine,
             models::cmd_model_download,
+            models::cmd_model_status,
+            models::cmd_model_delete,
+            settings::cmd_get_setting,
+            settings::cmd_set_setting,
         ])
         .setup(|app| {
             // 自动化验证钩子：DUALSUB_AUTO_PLAY=/path/to.mp4 启动即加载（仅 macOS 已接播放内核）

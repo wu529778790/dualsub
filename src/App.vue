@@ -7,7 +7,7 @@
       <button class="bar-btn" @click="settingsOpen = !settingsOpen">设置</button>
     </header>
 
-    <!-- 设置面板（M1 MVP：翻译引擎） -->
+    <!-- 设置面板（翻译引擎 + 模型管理） -->
     <div v-if="settingsOpen" class="settings-panel">
       <label class="set-row">
         <span>翻译引擎</span>
@@ -17,8 +17,31 @@
           <option value="local">仅本地模型</option>
         </select>
       </label>
+      <label class="set-row">
+        <span>识别档位</span>
+        <select :value="whisperModel" @change="changeWhisperModel">
+          <option value="small">small（均衡，默认）</option>
+          <option value="base">base（快速，低配机）</option>
+        </select>
+      </label>
+
+      <div class="set-section">模型管理</div>
+      <div v-for="m in modelStatus" :key="m.name" class="model-row">
+        <span class="model-desc">{{ m.desc }}</span>
+        <span v-if="m.installed" class="model-ok">已装 {{ m.sizeMb }}MB</span>
+        <template v-else>
+          <button class="btn small" :disabled="downloadingName === m.name" @click="download(m.name)">
+            {{ downloadingName === m.name ? `下载中 ${downloadPct}%` : "下载" }}
+          </button>
+        </template>
+        <button
+          v-if="m.installed"
+          class="btn small ghost"
+          @click="removeModel(m.name)"
+        >删除</button>
+      </div>
       <p class="set-hint">
-        在线翻译需可访问 Google（自动使用系统代理）；本地模型约 4GB，按需下载
+        在线翻译需可访问 Google（自动使用系统代理）；本地翻译模型全离线、无内容屏蔽
       </p>
     </div>
 
@@ -31,9 +54,25 @@
       @drop.prevent="onDrop"
     >
       <div v-if="!loaded" class="panel">
-        <p>把视频文件拖进窗口，或点「打开」</p>
-        <button class="btn ghost" @click.stop="genTest">生成测试视频</button>
-        <p class="status">{{ status }}</p>
+        <template v-if="showWizard">
+          <p class="wizard-title">欢迎使用 DualSub</p>
+          <p class="wizard-text">
+            语音识别需要下载识别模型（~466MB）；<br />
+            在线翻译开箱即用；本地翻译模型（~4.4GB）可离线翻译、无视内容屏蔽。
+          </p>
+          <div class="wizard-actions">
+            <button class="btn" @click.stop="wizardDownloadAll">
+              {{ wizardDownloading ? "下载中…" : "下载模型（识别+本地翻译）" }}
+            </button>
+            <button class="btn ghost" @click.stop="wizardDismiss">仅在线翻译，直接开始</button>
+          </div>
+          <p class="status">{{ status }}</p>
+        </template>
+        <template v-else>
+          <p>把视频文件拖进窗口，或点「打开」</p>
+          <button class="btn ghost" @click.stop="genTest">生成测试视频</button>
+          <p class="status">{{ status }}</p>
+        </template>
       </div>
 
       <!-- 实时字幕 Overlay（技术方案决策 B：DOM 渲染，不用 mpv sub 轨） -->
@@ -134,6 +173,19 @@ const engine = ref("auto");
 const needLocalModel = ref(false);
 const downloading = ref(false);
 const downloadPct = ref(0);
+
+// 模型管理与首启向导
+interface ModelStatus {
+  name: string;
+  desc: string;
+  installed: boolean;
+  sizeMb: number;
+}
+const modelStatus = ref<ModelStatus[]>([]);
+const downloadingName = ref("");
+const whisperModel = ref("small");
+const showWizard = ref(false);
+const wizardDownloading = ref(false);
 const recognizing = ref<{ start: number; end: number } | null>(null);
 const asrError = ref("");
 const mode = ref<"译文" | "原文" | "双语">("双语");
@@ -226,23 +278,69 @@ onMounted(async () => {
     "models://progress",
     (e) => {
       downloading.value = true;
+      downloadingName.value = e.payload.name;
       downloadPct.value = Math.min(
         100,
         Math.round((e.payload.downloadedMb / (e.payload.totalMb || 1)) * 100)
       );
     }
   );
-  await listen<{ name: string }>("models://done", () => {
+  await listen<{ name: string }>("models://done", async (e) => {
     downloading.value = false;
+    downloadingName.value = "";
     needLocalModel.value = false;
-    status.value = "本地模型已就绪，翻译兜底可用";
+    status.value = "模型下载完成";
+    await refreshModelStatus();
+    // whisper 模型装好后，下次识别会话自动使用
   });
   await listen<string>("models://error", (e) => {
     downloading.value = false;
+    downloadingName.value = "";
     status.value = `模型下载失败: ${e.payload}`;
   });
   engine.value = await invoke<string>("cmd_mt_get_engine");
+  whisperModel.value = (await invoke<string>("cmd_get_setting", { key: "whisper_model" })) || "small";
+  await refreshModelStatus();
+  // 首启向导：识别模型未装且未跳过过
+  showWizard.value =
+    !modelStatus.value.find((m) => m.name === "whisper-small")?.installed &&
+    (await invoke<string>("cmd_get_setting", { key: "wizard_done" })) !== "1";
 });
+
+async function refreshModelStatus() {
+  modelStatus.value = await invoke<ModelStatus[]>("cmd_model_status");
+}
+
+async function download(name: string) {
+  if (downloading.value) return;
+  await invoke("cmd_model_download", { name }).catch((e) => (status.value = String(e)));
+}
+
+async function removeModel(name: string) {
+  await invoke("cmd_model_delete", { name }).catch((e) => (status.value = String(e)));
+  await refreshModelStatus();
+}
+
+async function changeWhisperModel(e: Event) {
+  const v = (e.target as HTMLSelectElement).value;
+  whisperModel.value = v;
+  await invoke("cmd_set_setting", { key: "whisper_model", value: v }).catch((e) =>
+    (status.value = String(e))
+  );
+  status.value = "识别档位已保存，下次播放生效";
+}
+
+async function wizardDownloadAll() {
+  wizardDownloading.value = true;
+  await download("whisper-small");
+  await download("translation");
+  wizardDownloading.value = false;
+}
+
+async function wizardDismiss() {
+  await invoke("cmd_set_setting", { key: "wizard_done", value: "1" });
+  showWizard.value = false;
+}
 
 async function changeEngine(e: Event) {
   const v = (e.target as HTMLSelectElement).value;
@@ -628,6 +726,51 @@ onMounted(async () => {
   font-size: 11px;
   color: #8f8f9a;
   max-width: 320px;
+}
+
+.set-section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 12px;
+  font-weight: 700;
+  color: #cfcfd8;
+}
+
+.model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 11px;
+}
+
+.model-desc {
+  flex: 1;
+  color: #b9b9c4;
+}
+
+.model-ok {
+  color: #7ddb8a;
+  white-space: nowrap;
+}
+
+/* 首启向导 */
+.wizard-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.wizard-text {
+  line-height: 1.8;
+}
+
+.wizard-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
 }
 
 /* 本地模型下载引导条 */
