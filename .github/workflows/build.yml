@@ -14,10 +14,13 @@ jobs:
           - os: macos-latest
             bundles: app
           - os: ubuntu-22.04
-            bundles: app
+            bundles: deb
           - os: windows-latest
             bundles: nsis
     runs-on: ${{ matrix.os }}
+    env:
+      # whisper.cpp 需要 filesystem 特性（macOS 10.15+）
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
     steps:
       - uses: actions/checkout@v4
 

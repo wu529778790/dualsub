@@ -25,7 +25,8 @@ pub fn run() {
             models::cmd_model_download,
         ])
         .setup(|app| {
-            // 自动化验证钩子：DUALSUB_AUTO_PLAY=/path/to.mp4 启动即加载
+            // 自动化验证钩子：DUALSUB_AUTO_PLAY=/path/to.mp4 启动即加载（仅 macOS 已接播放内核）
+            #[cfg(target_os = "macos")]
             if let Ok(path) = std::env::var("DUALSUB_AUTO_PLAY") {
                 if !path.is_empty() {
                     let handle = app.handle().clone();
