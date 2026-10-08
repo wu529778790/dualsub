@@ -25,9 +25,9 @@
         <div v-if="mode !== '译文'" class="sub-src">{{ activeSub.text }}</div>
         <div v-if="mode !== '原文' && activeTranslation" class="sub-dst">{{ activeTranslation }}</div>
         <div
-          v-else-if="mode === '译文'"
+          v-else-if="mode === '译文' && mtAvailable"
           class="sub-dst pending"
-        >译文生成中…（M3 接入本地翻译）</div>
+        >译文生成中…</div>
       </div>
 
       <!-- 识别进度指示（方案 §2.2：进度可见，绝不让人以为卡死） -->
@@ -103,6 +103,8 @@ interface Sub {
   text: string;
 }
 const subs = ref<Sub[]>([]);
+const translations = ref<{ start: number; end: number; src: string; dst: string }[]>([]);
+const mtAvailable = ref(true);
 const recognizing = ref<{ start: number; end: number } | null>(null);
 const asrError = ref("");
 const mode = ref<"译文" | "原文" | "双语">("双语");
@@ -114,8 +116,21 @@ const activeSub = computed(() => {
   }
   return null;
 });
-// M3 接入本地翻译后填充
-const activeTranslation = computed(() => "");
+// 译文：优先时间重叠，其次按源文本匹配（缓存命中时时间可能略有出入）
+const activeTranslation = computed(() => {
+  const ts = translations.value;
+  for (let i = ts.length - 1; i >= 0; i--) {
+    const t = ts[i];
+    if (t.start <= timePos.value && timePos.value <= t.end) return t.dst;
+  }
+  const src = activeSub.value?.text;
+  if (src) {
+    for (let i = ts.length - 1; i >= 0; i--) {
+      if (ts[i].src === src) return ts[i].dst;
+    }
+  }
+  return "";
+});
 
 const barRef = ref<HTMLElement | null>(null);
 
@@ -162,6 +177,17 @@ onMounted(async () => {
   });
   await listen<string>("asr://error", (e) => {
     asrError.value = String(e.payload);
+  });
+  await listen<{
+    start: number;
+    end: number;
+    src: string;
+    dst: string;
+  }>("asr://translation", (e) => {
+    translations.value.push(e.payload);
+  });
+  await listen<string>("mt://unavailable", () => {
+    mtAvailable.value = false;
   });
 });
 

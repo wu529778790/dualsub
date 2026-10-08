@@ -186,6 +186,8 @@ fn run_session(
         let mut samples = vec![0f32; WINDOW_SAMPLES];
         let mut last_text = String::new();
         let mut repeat_count = 0usize;
+        // 语言：首窗自动检测，之后钉住（方案 §4.2 源语言自动猜）
+        let mut detected_lang: Option<String> = None;
 
         loop {
             // 窗口间轮询：seek / 换片 / 关停
@@ -274,10 +276,19 @@ fn run_session(
                     return;
                 }
             };
-            if let Err(e) = state.full(make_params(), &samples) {
+            if let Err(e) = state.full(make_params(detected_lang.as_deref()), &samples) {
                 eprintln!("[asr] 推理失败: {e}");
                 window_idx += 1;
                 continue;
+            }
+            // 首窗后钉住检测到的语言
+            if detected_lang.is_none() {
+                if let Ok(id) = state.full_lang_id_from_state() {
+                    if let Some(code) = whisper_rs::get_lang_str(id) {
+                        eprintln!("[asr] 检测语言: {code}");
+                        detected_lang = Some(code.to_string());
+                    }
+                }
             }
             eprintln!(
                 "[asr] 窗 {window_idx} [{window_start:.1}-{window_end:.1}] 推理 {:.2}s（语音占比 {:.0}%)",
@@ -315,18 +326,34 @@ fn run_session(
                 eprintln!("[asr] 字幕 [{seg_start:.1}-{seg_end:.1}] {text}");
                 let _ = app.emit(
                     "asr://subtitle",
-                    SubtitleEvent { start: seg_start, end: seg_end, text },
+                    SubtitleEvent { start: seg_start, end: seg_end, text: text.clone() },
                 );
+                // 进翻译队列（M3：攒批 + 缓存 + llama-server）；已是中文的跳过
+                if !crate::mt::is_mostly_chinese(&text) {
+                    crate::mt::enqueue(app, seg_start, seg_end, &text);
+                }
             }
             window_idx += 1;
         }
     }
 }
 
-fn make_params() -> FullParams<'static, 'static> {
+fn make_params<'a>(lang: Option<&'a str>) -> FullParams<'a, 'a> {
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-    params.set_language(Some("zh"));
-    params.set_initial_prompt("以下是普通话的句子。"); // 引导简体（spike-2 发现繁体偏向）
+    match lang {
+        Some(l) => {
+            params.set_language(Some(l));
+            // 简体引导只在确认是中文时加（日/英内容加中文提示词会把输出带歪）
+            if l == "zh" {
+                params.set_initial_prompt("以下是普通话的句子。");
+            }
+        }
+        None => {
+            // 首窗：自动检测
+            params.set_language(None);
+            params.set_detect_language(true);
+        }
+    }
     params.set_no_speech_thold(0.6);
     params.set_suppress_blank(true);
     params.set_print_progress(false);

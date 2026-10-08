@@ -1,4 +1,5 @@
 mod asr;
+mod mt;
 mod player;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -7,6 +8,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(player::PlayerState::default())
         .manage(asr::AsrState::default())
+        .manage(mt::MtState::default())
         .invoke_handler(tauri::generate_handler![
             player::cmd_player_load,
             player::cmd_player_toggle_pause,
@@ -32,6 +34,12 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("DualSub 启动失败");
+        .build(tauri::generate_context!())
+        .expect("DualSub 构建失败")
+        .run(|app_handle, event| {
+            // 方案 §4.4：退出即干净——收割 llama-server sidecar
+            if let tauri::RunEvent::Exit = event {
+                mt::shutdown(app_handle);
+            }
+        });
 }
