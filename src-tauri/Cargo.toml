@@ -3,6 +3,7 @@ name = "dualsub"
 version = "0.1.0"
 description = "打开视频，字幕跟上。跨平台桌面播放器，实时双语字幕，全离线运行。"
 edition = "2021"
+default-run = "dualsub"
 
 [lib]
 name = "dualsub_lib"
@@ -13,9 +14,11 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 whisper-rs = "0.14"
+encoding_rs = "0.8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
