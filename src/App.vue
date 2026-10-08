@@ -19,6 +19,22 @@
         <button class="btn ghost" @click.stop="genTest">生成测试视频</button>
         <p class="status">{{ status }}</p>
       </div>
+
+      <!-- 实时字幕 Overlay（技术方案决策 B：DOM 渲染，不用 mpv sub 轨） -->
+      <div v-if="activeSub" class="subtitle-overlay">
+        <div v-if="mode !== '译文'" class="sub-src">{{ activeSub.text }}</div>
+        <div v-if="mode !== '原文' && activeTranslation" class="sub-dst">{{ activeTranslation }}</div>
+        <div
+          v-else-if="mode === '译文'"
+          class="sub-dst pending"
+        >译文生成中…（M3 接入本地翻译）</div>
+      </div>
+
+      <!-- 识别进度指示（方案 §2.2：进度可见，绝不让人以为卡死） -->
+      <div v-if="recognizing && recognizing.start >= timePos" class="asr-progress">
+        正在识别 {{ fmtTime(recognizing.start) }} – {{ fmtTime(recognizing.end) }}
+      </div>
+      <div v-if="asrError" class="asr-error">{{ asrError }}</div>
     </main>
 
     <!-- 控制栏 -->
@@ -80,6 +96,27 @@ const speed = ref(1);
 const displayTime = ref(0); // 拖动进度条时的临时显示值
 const dragging = ref(false);
 
+// 实时字幕状态（asr:// 事件）
+interface Sub {
+  start: number;
+  end: number;
+  text: string;
+}
+const subs = ref<Sub[]>([]);
+const recognizing = ref<{ start: number; end: number } | null>(null);
+const asrError = ref("");
+const mode = ref<"译文" | "原文" | "双语">("双语");
+
+const activeSub = computed(() => {
+  for (let i = subs.value.length - 1; i >= 0; i--) {
+    const s = subs.value[i];
+    if (s.start <= timePos.value && timePos.value <= s.end) return s;
+  }
+  return null;
+});
+// M3 接入本地翻译后填充
+const activeTranslation = computed(() => "");
+
 const barRef = ref<HTMLElement | null>(null);
 
 let unlisten: UnlistenFn | null = null;
@@ -116,6 +153,16 @@ onMounted(async () => {
     if (st.paused != null) paused.value = st.paused;
   }
   window.addEventListener("keydown", onKey);
+  // asr 事件
+  await listen<Sub>("asr://subtitle", (e) => {
+    subs.value.push(e.payload);
+  });
+  await listen<{ start: number; end: number }>("asr://progress", (e) => {
+    recognizing.value = e.payload;
+  });
+  await listen<string>("asr://error", (e) => {
+    asrError.value = String(e.payload);
+  });
 });
 
 onUnmounted(() => {
@@ -239,6 +286,15 @@ function onKey(e: KeyboardEvent) {
     case " ":
       e.preventDefault();
       togglePause();
+      break;
+    case "1":
+      mode.value = "译文";
+      break;
+    case "2":
+      mode.value = "原文";
+      break;
+    case "3":
+      mode.value = "双语";
       break;
     case "ArrowLeft":
       seekBy(-5);
@@ -378,6 +434,73 @@ onMounted(async () => {
 .status {
   color: #ffd479;
   min-height: 16px;
+}
+
+/* 字幕 Overlay：底部居中，黑描边白字 */
+.subtitle-overlay {
+  position: absolute;
+  left: 50%;
+  bottom: 8%;
+  transform: translateX(-50%);
+  max-width: 80%;
+  text-align: center;
+  pointer-events: none;
+}
+
+.sub-src {
+  font-size: 28px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow:
+    0 0 4px #000, 0 0 4px #000,
+    2px 2px 2px #000, -2px 2px 2px #000,
+    2px -2px 2px #000, -2px -2px 2px #000;
+  line-height: 1.4;
+}
+
+.sub-dst {
+  margin-top: 6px;
+  font-size: 24px;
+  font-weight: 600;
+  color: #ffd479;
+  text-shadow:
+    0 0 4px #000, 0 0 4px #000,
+    2px 2px 2px #000, -2px 2px 2px #000,
+    2px -2px 2px #000, -2px -2px 2px #000;
+  line-height: 1.4;
+}
+
+.sub-dst.pending {
+  font-size: 14px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* 识别进度指示 */
+.asr-progress {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 11px;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.asr-error {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(120, 30, 30, 0.8);
+  color: #ffd7d7;
+  font-size: 12px;
+  max-width: 60%;
+  pointer-events: none;
 }
 
 /* 控制栏 */

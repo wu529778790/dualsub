@@ -1,3 +1,4 @@
+mod asr;
 mod player;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -5,6 +6,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(player::PlayerState::default())
+        .manage(asr::AsrState::default())
         .invoke_handler(tauri::generate_handler![
             player::cmd_player_load,
             player::cmd_player_toggle_pause,

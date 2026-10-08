@@ -72,6 +72,7 @@ const MPV_FORMAT_DOUBLE: c_int = 5;
 
 const MPV_EVENT_SHUTDOWN: c_int = 1;
 const MPV_EVENT_FILE_LOADED: c_int = 8;
+const MPV_EVENT_SEEK: c_int = 20;
 const MPV_EVENT_PROPERTY_CHANGE: c_int = 22;
 
 // ---------- 全局状态 ----------
@@ -233,11 +234,17 @@ unsafe fn event_loop(app: AppHandle, client: MpvPtr) {
                     }
                     let name = CStr::from_ptr((*prop).name).to_string_lossy().to_string();
                     let payload = match name.as_str() {
-                        "time-pos" => PlayerEvent {
-                            time_pos: read_prop_f64(prop),
-                            duration: None,
-                            paused: None,
-                        },
+                        "time-pos" => {
+                            let t = read_prop_f64(prop);
+                            if let Some(t) = t {
+                                crate::asr::set_playback_pos(&app, t);
+                            }
+                            PlayerEvent {
+                                time_pos: t,
+                                duration: None,
+                                paused: None,
+                            }
+                        }
                         "duration" => PlayerEvent {
                             time_pos: None,
                             duration: read_prop_f64(prop),
@@ -251,6 +258,12 @@ unsafe fn event_loop(app: AppHandle, client: MpvPtr) {
                         _ => continue,
                     };
                     let _ = app.emit("player://state", payload);
+                }
+                MPV_EVENT_SEEK => {
+                    // seek → 识别管线从新位置重启（时间戳以 ffmpeg 输出为基准）
+                    let t = get_f64(client, c"time-pos").unwrap_or(0.0);
+                    crate::asr::set_playback_pos(&app, t);
+                    crate::asr::on_seek(&app, t);
                 }
                 _ => {}
             }
@@ -379,6 +392,9 @@ pub fn player_load(app: &AppHandle, path: String) -> Result<(), String> {
             }
         }
         eprintln!("[player] loadfile: {path}");
+
+        // 实时识别管线启动（模型缺失时只发事件，不影响播放）
+        crate::asr::on_video_start(app, path.clone());
     })
     .map_err(|e| e.to_string())
 }
