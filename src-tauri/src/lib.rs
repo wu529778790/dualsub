@@ -1,4 +1,5 @@
 mod asr;
+mod models;
 mod mt;
 mod player;
 
@@ -9,6 +10,7 @@ pub fn run() {
         .manage(player::PlayerState::default())
         .manage(asr::AsrState::default())
         .manage(mt::MtState::default())
+        .manage(models::ModelsState::default())
         .invoke_handler(tauri::generate_handler![
             player::cmd_player_load,
             player::cmd_player_toggle_pause,
@@ -18,6 +20,9 @@ pub fn run() {
             player::cmd_player_toggle_fullscreen,
             player::cmd_player_get_state,
             player::cmd_gen_test_video,
+            mt::cmd_mt_set_engine,
+            mt::cmd_mt_get_engine,
+            models::cmd_model_download,
         ])
         .setup(|app| {
             // 自动化验证钩子：DUALSUB_AUTO_PLAY=/path/to.mp4 启动即加载

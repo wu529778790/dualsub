@@ -4,7 +4,23 @@
       <span class="title">DualSub</span>
       <span class="filename">{{ filename }}</span>
       <button class="bar-btn" @click="openFile">打开</button>
+      <button class="bar-btn" @click="settingsOpen = !settingsOpen">设置</button>
     </header>
+
+    <!-- 设置面板（M1 MVP：翻译引擎） -->
+    <div v-if="settingsOpen" class="settings-panel">
+      <label class="set-row">
+        <span>翻译引擎</span>
+        <select :value="engine" @change="changeEngine">
+          <option value="auto">自动（在线优先，失败转本地）</option>
+          <option value="online">仅在线</option>
+          <option value="local">仅本地模型</option>
+        </select>
+      </label>
+      <p class="set-hint">
+        在线翻译需可访问 Google（自动使用系统代理）；本地模型约 4GB，按需下载
+      </p>
+    </div>
 
     <!-- 视频区域：背景全透明，透出下层 mpv 画面；输入由前端接管 -->
     <main
@@ -35,6 +51,14 @@
         正在识别 {{ fmtTime(recognizing.start) }} – {{ fmtTime(recognizing.end) }}
       </div>
       <div v-if="asrError" class="asr-error">{{ asrError }}</div>
+
+      <!-- 在线翻译失败 → 引导下载本地模型（产品决策：告知 + 兜底） -->
+      <div v-if="needLocalModel" class="cta-bar">
+        <span>在线翻译不可用（可能被过滤或网络受限）。本地模型可离线翻译、无视屏蔽。</span>
+        <button class="btn small" @click.stop="downloadLocalModel">
+          {{ downloading ? `下载中 ${downloadPct}%` : "下载本地模型" }}
+        </button>
+      </div>
     </main>
 
     <!-- 控制栏 -->
@@ -105,6 +129,11 @@ interface Sub {
 const subs = ref<Sub[]>([]);
 const translations = ref<{ start: number; end: number; src: string; dst: string }[]>([]);
 const mtAvailable = ref(true);
+const settingsOpen = ref(false);
+const engine = ref("auto");
+const needLocalModel = ref(false);
+const downloading = ref(false);
+const downloadPct = ref(0);
 const recognizing = ref<{ start: number; end: number } | null>(null);
 const asrError = ref("");
 const mode = ref<"译文" | "原文" | "双语">("双语");
@@ -189,7 +218,42 @@ onMounted(async () => {
   await listen<string>("mt://unavailable", () => {
     mtAvailable.value = false;
   });
+  await listen<string>("mt://need-local-model", (e) => {
+    needLocalModel.value = true;
+    status.value = String(e.payload);
+  });
+  await listen<{ name: string; downloadedMb: number; totalMb: number }>(
+    "models://progress",
+    (e) => {
+      downloading.value = true;
+      downloadPct.value = Math.min(
+        100,
+        Math.round((e.payload.downloadedMb / (e.payload.totalMb || 1)) * 100)
+      );
+    }
+  );
+  await listen<{ name: string }>("models://done", () => {
+    downloading.value = false;
+    needLocalModel.value = false;
+    status.value = "本地模型已就绪，翻译兜底可用";
+  });
+  await listen<string>("models://error", (e) => {
+    downloading.value = false;
+    status.value = `模型下载失败: ${e.payload}`;
+  });
+  engine.value = await invoke<string>("cmd_mt_get_engine");
 });
+
+async function changeEngine(e: Event) {
+  const v = (e.target as HTMLSelectElement).value;
+  engine.value = v;
+  await invoke("cmd_mt_set_engine", { engine: v }).catch((e) => (status.value = String(e)));
+}
+
+async function downloadLocalModel() {
+  if (downloading.value) return;
+  await invoke("cmd_model_download", { name: "translation" }).catch((e) => (status.value = String(e)));
+}
 
 onUnmounted(() => {
   unlisten?.();
@@ -527,6 +591,67 @@ onMounted(async () => {
   font-size: 12px;
   max-width: 60%;
   pointer-events: none;
+}
+
+/* 设置面板 */
+.settings-panel {
+  position: absolute;
+  top: 44px;
+  right: 12px;
+  z-index: 20;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: rgba(24, 24, 30, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  margin: 0;
+}
+
+.set-row select {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.set-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: #8f8f9a;
+  max-width: 320px;
+}
+
+/* 本地模型下载引导条 */
+.cta-bar {
+  position: absolute;
+  top: 50px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: rgba(70, 50, 12, 0.9);
+  border: 1px solid rgba(255, 212, 121, 0.4);
+  font-size: 12px;
+  color: #ffe1a1;
+  max-width: 72%;
+}
+
+.btn.small {
+  padding: 5px 12px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 /* 控制栏 */

@@ -21,6 +21,93 @@ const BATCH_LINES: usize = 4;
 /// 攒批超时：首句入队后等这么久没凑满就翻译
 const BATCH_TIMEOUT_MS: u64 = 2000;
 const BASE_PORT: u16 = 18434;
+const ONLINE_TIMEOUT_SECS: u64 = 10;
+
+// ---------- 翻译引擎选择（产品决策：在线优先，本地兜底） ----------
+#[derive(Clone, Copy, PartialEq)]
+enum Engine {
+    Auto,
+    OnlineOnly,
+    LocalOnly,
+}
+
+impl Engine {
+    fn from_str(s: &str) -> Self {
+        match s {
+            "online" => Engine::OnlineOnly,
+            "local" => Engine::LocalOnly,
+            _ => Engine::Auto,
+        }
+    }
+}
+
+fn engine_setting() -> Engine {
+    let path = settings_file();
+    if let Ok(bytes) = std::fs::read(path) {
+        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+            if let Some(s) = v["mt_engine"].as_str() {
+                return Engine::from_str(s);
+            }
+        }
+    }
+    Engine::Auto
+}
+
+fn settings_file() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_default();
+    PathBuf::from(home).join(".dualsub/settings.json")
+}
+
+/// 从环境变量构造代理（ureq 2.12 的系统代理 API 未公开，自行实现）
+pub fn env_proxy() -> Option<ureq::Proxy> {
+    for k in ["ALL_PROXY", "all_proxy", "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"] {
+        if let Ok(v) = std::env::var(k) {
+            if let Ok(p) = ureq::Proxy::new(v) {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+// ---------- 在线免费翻译（Google gtx 端点；需网络可达，尊重代理环境变量） ----------
+fn online_translate(lines: &[&str]) -> Result<Vec<String>, String> {
+    let mut builder = ureq::AgentBuilder::new().timeout(Duration::from_secs(ONLINE_TIMEOUT_SECS));
+    if let Some(p) = env_proxy() {
+        builder = builder.proxy(p);
+    }
+    let agent = builder.build();
+
+    let mut outs = Vec::with_capacity(lines.len());
+    for line in lines {
+        let resp = agent
+            .get("https://translate.googleapis.com/translate_a/single")
+            .query("client", "gtx")
+            .query("sl", "auto")
+            .query("tl", "zh-CN")
+            .query("dt", "t")
+            .query("q", line)
+            .call()
+            .map_err(|e| format!("在线翻译请求失败: {e}"))?;
+        let text = resp.into_string().map_err(|e| e.to_string())?;
+        let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        // 响应结构 v[0] = [[trans, orig, ...], ...]，拼接所有分段的译文
+        let segs = v[0]
+            .as_array()
+            .ok_or("在线翻译响应格式异常")?;
+        let mut out = String::new();
+        for seg in segs {
+            if let Some(t) = seg[0].as_str() {
+                out.push_str(t);
+            }
+        }
+        if out.trim().is_empty() {
+            return Err("在线翻译返回空结果（可能被过滤）".into());
+        }
+        outs.push(out);
+    }
+    Ok(outs)
+}
 
 pub struct MtState {
     tx: Mutex<Option<Sender<TransJob>>>,
@@ -88,6 +175,34 @@ pub fn shutdown(app: &AppHandle) {
     }
 }
 
+// ---------- 引擎设置命令 ----------
+#[tauri::command]
+pub fn cmd_mt_set_engine(engine: String) -> Result<(), String> {
+    if !matches!(engine.as_str(), "auto" | "online" | "local") {
+        return Err(format!("未知引擎: {engine}"));
+    }
+    // 重置不可用标记：切引擎给一次重新尝试的机会
+    let path = settings_file();
+    let mut v = std::fs::read(&path)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    v["mt_engine"] = serde_json::json!(engine);
+    std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+    std::fs::write(&path, serde_json::to_string(&v).unwrap()).map_err(|e| e.to_string())?;
+    eprintln!("[mt] 翻译引擎 → {engine}");
+    Ok(())
+}
+
+#[tauri::command]
+pub fn cmd_mt_get_engine() -> String {
+    match engine_setting() {
+        Engine::OnlineOnly => "online".into(),
+        Engine::LocalOnly => "local".into(),
+        Engine::Auto => "auto".into(),
+    }
+}
+
 // ---------- worker：攒批翻译 ----------
 fn worker(app: AppHandle, rx: Receiver<TransJob>) {
     // 启动时加载磁盘缓存
@@ -148,57 +263,76 @@ fn flush(app: &AppHandle, batch: &mut Vec<TransJob>, cache_path: &PathBuf) {
         return;
     }
 
-    // 2. sidecar
-    let port = match ensure_server(app) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("[mt] {e}");
+    let lines: Vec<&str> = uncached.iter().map(|(_, j)| j.text.as_str()).collect();
+
+    // 2. 按引擎路由（产品决策：自动=在线优先→本地兜底；失败时提示下载本地模型）
+    let engine = engine_setting();
+    eprintln!(
+        "[mt] 引擎={}，批 {} 句",
+        match engine {
+            Engine::Auto => "auto",
+            Engine::OnlineOnly => "online",
+            Engine::LocalOnly => "local",
+        },
+        lines.len()
+    );
+    let result = match engine {
+        Engine::OnlineOnly => online_translate(&lines).map_err(|e| {
+            eprintln!("[mt] 在线翻译失败: {e}");
+            let _ = app.emit("mt://need-local-model", "在线翻译不可用");
+            e
+        }),
+        Engine::LocalOnly => local_translate(app, &lines).map_err(|e| {
+            eprintln!("[mt] 本地翻译失败: {e}");
             app.state::<MtState>()
                 .unavailable
                 .store(true, Ordering::Relaxed);
-            let _ = app.emit("mt://unavailable", e);
-            batch.clear();
-            return;
-        }
-    };
-
-    // 3. 批量请求
-    let lines: Vec<&str> = uncached.iter().map(|(_, j)| j.text.as_str()).collect();
-    match translate_batch(port, &lines) {
-        Ok(outs) if outs.len() == lines.len() => {
-            let mut cache = st.cache.lock().unwrap();
-            for ((i, job), dst) in uncached.into_iter().zip(outs.into_iter()) {
-                let dst = dst.trim().to_string();
-                cache.insert(job.text.clone(), dst.clone());
-                emit_translation(app, job, &dst);
-                let _ = i; // 顺序已对齐
-            }
-        }
-        Ok(outs) => {
-            // 行数不齐：退化为逐句翻译（MVP 简化，保证不出错行）
-            eprintln!(
-                "[mt] 批量输出行数不齐（{}/{}），退化逐句",
-                outs.len(),
-                lines.len()
-            );
-            for (_, job) in &uncached {
-                if let Ok(dst) = translate_batch(port, &[&job.text]) {
-                    if let Some(first) = dst.into_iter().next() {
-                        let dst = first.trim().to_string();
-                        st.cache.lock().unwrap().insert(job.text.clone(), dst.clone());
-                        emit_translation(app, job, &dst);
+            let _ = app.emit("mt://unavailable", e.clone());
+            e
+        }),
+        Engine::Auto => match online_translate(&lines) {
+            Ok(o) => Ok(o),
+            Err(e) => {
+                eprintln!("[mt] 在线翻译失败（{e}），尝试本地兜底");
+                match local_translate(app, &lines) {
+                    Ok(o) => Ok(o),
+                    Err(e2) => {
+                        eprintln!("[mt] 本地兜底失败: {e2}");
+                        let _ = app.emit(
+                            "mt://need-local-model",
+                            "在线翻译不可用，可下载本地模型兜底",
+                        );
+                        Err(e2)
                     }
                 }
             }
-        }
-        Err(e) => {
-            eprintln!("[mt] 翻译请求失败: {e}");
-            // 请求失败不清 batch：丢批次，后续句子重试
+        },
+    };
+
+    // 3. 结果入库 + 上屏
+    if let Ok(outs) = result {
+        if outs.len() == lines.len() {
+            let mut cache = st.cache.lock().unwrap();
+            for ((_, job), dst) in uncached.into_iter().zip(outs.into_iter()) {
+                let dst = dst.trim().to_string();
+                cache.insert(job.text.clone(), dst.clone());
+                emit_translation(app, job, &dst);
+            }
         }
     }
 
     batch.clear();
     save_cache(&st.cache.lock().unwrap(), cache_path);
+}
+
+/// 本地 sidecar 翻译（llama-server）
+fn local_translate(app: &AppHandle, lines: &[&str]) -> Result<Vec<String>, String> {
+    let port = ensure_server(app)?;
+    let outs = translate_batch(port, lines)?;
+    if outs.len() != lines.len() {
+        return Err(format!("批量输出行数不齐（{}/{}）", outs.len(), lines.len()));
+    }
+    Ok(outs)
 }
 
 fn emit_translation(app: &AppHandle, job: &TransJob, dst: &str) {
