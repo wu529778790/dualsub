@@ -55,14 +55,28 @@ jobs:
           cd src-tauri/target/release/bundle/macos
           zip -qry ../../../DualSub-macOS.zip DualSub.app
 
-      - name: 上传产物
+      - name: 上传产物（Linux）
+        if: matrix.os == 'ubuntu-22.04'
         uses: actions/upload-artifact@v4
         with:
-          name: dualsub-${{ matrix.os }}
-          path: |
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/nsis/*.exe
-            DualSub-macOS.zip
+          name: dualsub-ubuntu
+          path: src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error
+
+      - name: 上传产物（Windows）
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dualsub-windows
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+      - name: 上传产物（macOS）
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dualsub-macos
+          path: DualSub-macOS.zip
           if-no-files-found: error
 
   release:
