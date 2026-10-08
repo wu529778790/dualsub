@@ -84,11 +84,6 @@ Windows 需自行安装 mpv/ffmpeg 并配置链接路径；Linux 需 libwebkit2g
 - [ ] M5 发布打磨（签名公证 / 运行时打包 / 自动更新）
 - [ ] M1-Windows 播放内核接入
 
-## 致谢
-
-- [Transub-Player](https://github.com/dlsandy/Transub-Player) —— 架构思路与产品决策的参考对象
-- [whisper.cpp](https://github.com/ggml-org/whisper.cpp) / [llama.cpp](https://github.com/ggml-org/llama.cpp) / [mpv](https://mpv.io) —— 站在巨人肩膀上
-
 ## License
 
 暂未确定开源协议（代码与文档当前保留所有权利）。
