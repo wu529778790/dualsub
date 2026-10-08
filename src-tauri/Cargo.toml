@@ -1,0 +1,22 @@
+[package]
+name = "dualsub"
+version = "0.1.0"
+description = "打开视频，字幕跟上。跨平台桌面播放器，实时双语字幕，全离线运行。"
+edition = "2021"
+
+[lib]
+name = "dualsub_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true
