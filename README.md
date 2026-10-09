@@ -9,8 +9,6 @@
 
 把本地视频（生肉/熟肉/无字幕资源）丢进播放器，画面立即开始播放，whisper 在后台实时生成字幕，翻译随后跟上——**原文 / 译文 / 双语三模式一键切换**。不用去字幕站搜字幕，不用折腾时间轴。
 
-对标 [Transub-Player](https://github.com/dlsandy/Transub-Player)（Windows/WPF），做 Tauri 跨平台版。只参考其架构思路与产品决策，未复用任何代码。
-
 ## 当前状态：macOS 可日用（v0.1.0-alpha.1）
 
 | 平台 | 状态 |
