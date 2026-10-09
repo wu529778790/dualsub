@@ -1,12 +1,12 @@
 [package]
-name = "dualsub"
+name = "livesub-player"
 version = "0.2.0"
 description = "打开视频，字幕跟上。跨平台桌面播放器，实时双语字幕，全离线运行。"
 edition = "2021"
-default-run = "dualsub"
+default-run = "livesub-player"
 
 [lib]
-name = "dualsub_lib"
+name = "livesub_player_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -33,9 +33,9 @@ pub fn run() {
             update::cmd_open_releases,
         ])
         .setup(|app| {
-            // 自动化验证钩子：DUALSUB_AUTO_PLAY=/path/to.mp4 启动即加载（仅 macOS 已接播放内核）
+            // 自动化验证钩子：LIVESUB_AUTO_PLAY=/path/to.mp4 启动即加载（仅 macOS 已接播放内核）
             #[cfg(target_os = "macos")]
-            if let Ok(path) = std::env::var("DUALSUB_AUTO_PLAY") {
+            if let Ok(path) = std::env::var("LIVESUB_AUTO_PLAY") {
                 if !path.is_empty() {
                     let handle = app.handle().clone();
                     std::thread::spawn(move || {
@@ -49,7 +49,7 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("DualSub 构建失败")
+        .expect("LiveSub-Player 构建失败")
         .run(|app_handle, event| {
             // 方案 §4.4：退出即干净——收割 llama-server sidecar
             if let tauri::RunEvent::Exit = event {

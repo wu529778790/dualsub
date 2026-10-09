@@ -1,12 +1,26 @@
-//! 设置持久化（~/.dualsub/settings.json）：简单 KV，各模块按 key 读取
+//! 设置持久化（~/.livesub-player/settings.json）：简单 KV，各模块按 key 读取
+//!
+//! 数据目录统一走 `data_dir()`：首次调用时把旧版 `~/.dualsub` 整体迁移为
+//! `~/.livesub-player`（模型/设置/翻译缓存一次搬完，避免重复下载）。
 
 use std::path::PathBuf;
 
 use serde_json::Value;
 
-pub fn settings_file() -> PathBuf {
+/// 应用数据目录：~/.livesub-player（首次调用时从旧 ~/.dualsub 迁移）
+pub fn data_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_default();
-    PathBuf::from(home).join(".dualsub/settings.json")
+    let new_dir = PathBuf::from(&home).join(".livesub-player");
+    let old_dir = PathBuf::from(&home).join(".dualsub");
+    if !new_dir.exists() && old_dir.is_dir() {
+        // 旧目录整体改名迁移；失败不影响后续（缺目录按未下载处理）
+        let _ = std::fs::rename(&old_dir, &new_dir);
+    }
+    new_dir
+}
+
+pub fn settings_file() -> PathBuf {
+    data_dir().join("settings.json")
 }
 
 fn read_all() -> Value {

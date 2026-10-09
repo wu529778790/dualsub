@@ -115,7 +115,7 @@ fn worker(app: AppHandle, rx: Receiver<Msg>) {
     let Some(model_path) = find_model() else {
         let _ = app.emit(
             "asr://error",
-            "未找到 whisper 模型：请把 ggml-small.bin 放入 ~/.dualsub/models/（M4 将提供下载管理）",
+            "未找到 whisper 模型：请把 ggml-small.bin 放入 ~/.livesub-player/models/（M4 将提供下载管理）",
         );
         eprintln!("[asr] 模型缺失，识别管线不启动");
         return;
@@ -150,13 +150,12 @@ fn worker(app: AppHandle, rx: Receiver<Msg>) {
 }
 
 fn find_model() -> Option<PathBuf> {
-    let home = std::env::var("HOME").ok()?;
     let tier = crate::settings::read("whisper_model").unwrap_or_else(|| "small".into());
     let file = match tier.as_str() {
         "base" => "ggml-base.bin",
         _ => "ggml-small.bin",
     };
-    let p = PathBuf::from(home).join(format!(".dualsub/models/{file}"));
+    let p = crate::settings::data_dir().join("models").join(file);
     p.is_file().then_some(p)
 }
 

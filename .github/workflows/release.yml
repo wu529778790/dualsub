@@ -53,9 +53,9 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           brew install dylibbundler
-          APP="src-tauri/target/release/bundle/macos/DualSub.app"
+          APP="src-tauri/target/release/bundle/macos/LiveSub-Player.app"
           # 递归收集主程序依赖的动态库（libmpv 及其 Homebrew 依赖树）拷进 .app 并重写路径
-          dylibbundler -cd -b -x "$APP/Contents/MacOS/dualsub" -d "$APP/Contents/libs"
+          dylibbundler -cd -b -x "$APP/Contents/MacOS/livesub-player" -d "$APP/Contents/libs"
           # dylibbundler 会给内嵌库写重复的 LC_RPATH，dyld 拒绝加载——全部删掉
           # （依赖路径已是 @executable_path/../libs/ 直达，rpath 无必要）
           for f in "$APP/Contents/libs/"*; do
@@ -70,13 +70,13 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           cd src-tauri/target/release/bundle/macos
-          zip -qry "$GITHUB_WORKSPACE/DualSub-macOS.zip" DualSub.app
+          zip -qry "$GITHUB_WORKSPACE/LiveSub-Player-macOS.zip" LiveSub-Player.app
 
       - name: 上传产物（Linux）
         if: matrix.os == 'ubuntu-22.04'
         uses: actions/upload-artifact@v4
         with:
-          name: dualsub-ubuntu
+          name: livesub-ubuntu
           path: src-tauri/target/release/bundle/deb/*.deb
           if-no-files-found: error
 
@@ -84,7 +84,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: dualsub-windows
+          name: livesub-windows
           path: src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
 
@@ -92,8 +92,8 @@ jobs:
         if: matrix.os == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: dualsub-macos
-          path: DualSub-macOS.zip
+          name: livesub-macos
+          path: LiveSub-Player-macOS.zip
           if-no-files-found: error
 
   release:

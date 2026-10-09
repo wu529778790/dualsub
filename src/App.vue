@@ -1,7 +1,7 @@
 <template>
   <div class="shell">
     <header class="topbar">
-      <span class="title">DualSub</span>
+      <span class="title">LiveSub-Player</span>
       <span class="filename">{{ filename }}</span>
       <button class="bar-btn" @click="openFile">打开</button>
       <button class="bar-btn" @click="settingsOpen = !settingsOpen">设置</button>
@@ -55,7 +55,7 @@
     >
       <div v-if="!loaded" class="panel">
         <template v-if="showWizard">
-          <p class="wizard-title">欢迎使用 DualSub</p>
+          <p class="wizard-title">欢迎使用 LiveSub-Player</p>
           <p class="wizard-text">
             语音识别需要下载识别模型（~466MB）；<br />
             在线翻译开箱即用；本地翻译模型（~4.4GB）可离线翻译、无视内容屏蔽。

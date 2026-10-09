@@ -320,7 +320,7 @@ fn ensure_utf8(p: &Path) -> PathBuf {
     }
     let (decoded, _, had_errors) = encoding_rs::GB18030.decode(&bytes);
     if !had_errors {
-        let dir = std::env::temp_dir().join("dualsub-subs");
+        let dir = std::env::temp_dir().join("livesub-subs");
         let _ = std::fs::create_dir_all(&dir);
         let name = format!(
             "{}.utf8.{}",
@@ -364,7 +364,7 @@ pub fn player_load(app: &AppHandle, path: String) -> Result<(), String> {
         // 事件线程 + 属性观察只挂一次（进程生命周期内只有一个 mpv 实例）
         static INIT: std::sync::Once = std::sync::Once::new();
         INIT.call_once(|| unsafe {
-            let client_name = c"dualsub-events";
+            let client_name = c"livesub-events";
             let client = mpv_create_client(ctx, client_name.as_ptr());
             if client.is_null() {
                 eprintln!("[player] 事件 client 创建失败");
@@ -503,7 +503,7 @@ pub fn cmd_player_get_state(app: AppHandle) -> Result<PlayerEvent, String> {
 /// 生成 30s 测试视频（彩条+正弦音），开发用
 #[tauri::command]
 pub fn cmd_gen_test_video() -> Result<String, String> {
-    let dir = std::env::temp_dir().join("dualsub-spike");
+    let dir = std::env::temp_dir().join("livesub-spike");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let out = dir.join("test.mp4");
     if !out.exists() {

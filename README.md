@@ -1,9 +1,9 @@
-# DualSub
+# LiveSub-Player
 
 > 打开视频，字幕跟上。跨平台桌面播放器：实时语音识别 + 双语字幕，安装包不到 4 MB。
 
-[![build](https://github.com/wu529778790/dualsub/actions/workflows/build.yml/badge.svg)](https://github.com/wu529778790/dualsub/actions/workflows/build.yml)
-[![release](https://github.com/wu529778790/dualsub/actions/workflows/release.yml/badge.svg)](https://github.com/wu529778790/dualsub/releases)
+[![build](https://github.com/wu529778790/livesub-player/actions/workflows/build.yml/badge.svg)](https://github.com/wu529778790/livesub-player/actions/workflows/build.yml)
+[![release](https://github.com/wu529778790/livesub-player/actions/workflows/release.yml/badge.svg)](https://github.com/wu529778790/livesub-player/releases)
 
 ## 这是什么
 
@@ -38,7 +38,7 @@
 应用未做付费签名公证（个人免费工具，省 $99/年），首次打开需要：
 
 - 方法一：安装后**右键 → 打开 → 再点打开**（只需一次）
-- 方法二：终端执行 `xattr -cr /Applications/DualSub.app`
+- 方法二：终端执行 `xattr -cr /Applications/LiveSub-Player.app`
 
 之后双击正常使用。如果你用 Homebrew，欢迎装好后帮忙提交 cask。
 

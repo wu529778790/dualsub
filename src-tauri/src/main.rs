@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    dualsub_lib::run()
+    livesub_player_lib::run()
 }

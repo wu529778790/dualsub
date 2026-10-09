@@ -339,8 +339,7 @@ fn emit_translation(app: &AppHandle, job: &TransJob, dst: &str) {
 
 // ---------- llama-server sidecar ----------
 fn find_model() -> Option<PathBuf> {
-    let home = std::env::var("HOME").ok()?;
-    let dir = PathBuf::from(home).join(".dualsub/models");
+    let dir = crate::settings::data_dir().join("models");
     for name in ["translation.gguf", "translation-tiny.gguf"] {
         let p = dir.join(name);
         if p.is_file() {
@@ -361,7 +360,7 @@ fn ensure_server(app: &AppHandle) -> Result<u16, String> {
 
     let Some(model) = find_model() else {
         return Err(
-            "未找到翻译模型：请把翻译 GGUF 放入 ~/.dualsub/models/translation.gguf（M4 将提供下载管理）"
+            "未找到翻译模型：请把翻译 GGUF 放入 ~/.livesub-player/models/translation.gguf（M4 将提供下载管理）"
                 .into(),
         );
     };
@@ -520,15 +519,13 @@ struct CacheFile {
 }
 
 fn cache_file() -> PathBuf {
-    let mut p = std::env::temp_dir();
-    // 方案：磁盘缓存跨会话有效——放 ~/.dualsub/，不随系统临时目录清理
-    if let Ok(home) = std::env::var("HOME") {
-        let dir = PathBuf::from(home).join(".dualsub");
-        if std::fs::create_dir_all(&dir).is_ok() {
-            return dir.join("translation-cache.json");
-        }
+    // 方案：磁盘缓存跨会话有效——放 ~/.livesub-player/，不随系统临时目录清理
+    let dir = crate::settings::data_dir();
+    if std::fs::create_dir_all(&dir).is_ok() {
+        return dir.join("translation-cache.json");
     }
-    p.push("dualsub-translation-cache.json");
+    let mut p = std::env::temp_dir();
+    p.push("livesub-translation-cache.json");
     p
 }
 

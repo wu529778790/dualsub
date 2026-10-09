@@ -115,8 +115,7 @@ struct DoneEvent {
 }
 
 fn models_dir() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|_| "无 HOME")?;
-    let dir = PathBuf::from(home).join(".dualsub/models");
+    let dir = crate::settings::data_dir().join("models");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }

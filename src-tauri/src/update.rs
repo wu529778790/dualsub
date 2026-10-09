@@ -5,8 +5,8 @@
 use serde::Serialize;
 use tauri::AppHandle;
 
-const RELEASES_API: &str = "https://api.github.com/repos/wu529778790/dualsub/releases/latest";
-const RELEASES_PAGE: &str = "https://github.com/wu529778790/dualsub/releases/latest";
+const RELEASES_API: &str = "https://api.github.com/repos/wu529778790/livesub-player/releases/latest";
+const RELEASES_PAGE: &str = "https://github.com/wu529778790/livesub-player/releases/latest";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,7 +32,7 @@ pub fn cmd_check_update(_app: AppHandle) -> Result<Option<UpdateInfo>, String> {
 
 fn fetch_latest_tag() -> Result<String, String> {
     let resp = ureq::get(RELEASES_API)
-        .set("User-Agent", "dualsub-app")
+        .set("User-Agent", "livesub-app")
         .timeout(std::time::Duration::from_secs(8))
         .call()
         .map_err(|e| format!("检查更新失败: {e}"))?;

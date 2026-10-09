@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "DualSub",
+  "productName": "LiveSub-Player",
   "version": "0.2.0",
-  "identifier": "com.dualsub.app",
+  "identifier": "com.livesubplayer.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:5173",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "DualSub",
+        "title": "LiveSub-Player",
         "width": 1280,
         "height": 720,
         "minWidth": 640,
