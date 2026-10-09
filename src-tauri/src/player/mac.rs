@@ -44,6 +44,7 @@ unsafe extern "C" {
         data: *mut c_void,
     ) -> i32;
     fn mpv_command(ctx: *mut c_void, args: *mut *const c_char) -> i32;
+    fn mpv_request_log_messages(ctx: *mut c_void, level: *const c_char) -> i32;
     fn mpv_observe_property(
         ctx: *mut c_void,
         reply_userdata: u64,
@@ -71,11 +72,20 @@ struct mpv_event {
     data: *mut c_void,
 }
 
+#[repr(C)]
+struct mpv_event_log_message {
+    prefix: *const c_char,
+    level: *const c_char,
+    text: *const c_char,
+    log_level: c_int,
+}
+
 const MPV_FORMAT_INT64: c_int = 4;
 const MPV_FORMAT_FLAG: c_int = 3;
 const MPV_FORMAT_DOUBLE: c_int = 5;
 
 const MPV_EVENT_SHUTDOWN: c_int = 1;
+const MPV_EVENT_LOG_MESSAGE: c_int = 2;
 const MPV_EVENT_FILE_LOADED: c_int = 8;
 const MPV_EVENT_SEEK: c_int = 20;
 const MPV_EVENT_PROPERTY_CHANGE: c_int = 22;
@@ -247,6 +257,17 @@ unsafe fn event_loop(app: AppHandle, client: MpvPtr) {
                         }
                     }
                 }
+                MPV_EVENT_LOG_MESSAGE => {
+                    // 排查播放内核问题用（mpv 日志走事件队列，必须 drain 才能看到）
+                    let m = (*ev).data as *mut mpv_event_log_message;
+                    if m.is_null() || (*m).text.is_null() {
+                        continue;
+                    }
+                    let level = if (*m).level.is_null() { c"?" } else { CStr::from_ptr((*m).level) };
+                    let prefix = if (*m).prefix.is_null() { c"" } else { CStr::from_ptr((*m).prefix) };
+                    let text = CStr::from_ptr((*m).text).to_string_lossy();
+                    eprintln!("[mpv:{}] {}: {}", level.to_string_lossy(), prefix.to_string_lossy(), text.trim_end());
+                }
                 MPV_EVENT_PROPERTY_CHANGE => {
                     let prop = (*ev).data as *mut mpv_event_property;
                     if prop.is_null() || (*prop).name.is_null() {
@@ -392,6 +413,7 @@ pub fn player_load(app: &AppHandle, path: String) -> Result<(), String> {
             if client.is_null() {
                 eprintln!("[player] 事件 client 创建失败");
             } else {
+                unsafe { mpv_request_log_messages(client, c"info".as_ptr()) };
                 for (name, fmt) in [
                     (c"time-pos", MPV_FORMAT_DOUBLE),
                     (c"duration", MPV_FORMAT_DOUBLE),

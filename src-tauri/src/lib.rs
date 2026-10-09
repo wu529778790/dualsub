@@ -44,6 +44,20 @@ pub fn run() {
                         if let Err(e) = player::player_load(&handle, path) {
                             eprintln!("[player] 自动加载失败: {e}");
                         }
+                        // 自动化验证钩子：LIVESUB_AUTO_SEEK=秒，LIVESUB_AUTO_SEEK_DELAY_MS=延迟（默认 4000）
+                        if let Ok(t) = std::env::var("LIVESUB_AUTO_SEEK") {
+                            if let Ok(t) = t.parse::<f64>() {
+                                let delay: u64 = std::env::var("LIVESUB_AUTO_SEEK_DELAY_MS")
+                                    .ok()
+                                    .and_then(|s| s.parse().ok())
+                                    .unwrap_or(4000);
+                                std::thread::sleep(std::time::Duration::from_millis(delay));
+                                eprintln!("[player] 自动 seek 到 {t}s");
+                                if let Err(e) = player::player_seek(&handle, t, true) {
+                                    eprintln!("[player] 自动 seek 失败: {e}");
+                                }
+                            }
+                        }
                     });
                 }
             }
