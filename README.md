@@ -31,14 +31,30 @@
 
 安装包只有几 MB——模型不内置，需要时再按需下载。对「在线服务翻不出来的片源」，本地模型就是答案。
 
-## 安装与首次打开（macOS）
+## 安装（macOS，Apple Silicon）
 
-应用未做付费签名公证（个人免费工具，省 $99/年），首次打开需要：
+不依赖付费签名公证（个人免费工具，省 $99/年），通过「下载时不打隔离标记」的通道分发，装完双击即开、无 Gatekeeper 拦截：
 
-- 方法一：安装后**右键 → 打开 → 再点打开**（只需一次）
-- 方法二：终端执行 `xattr -cr /Applications/LiveSub-Player.app`
+**方式一：一键脚本（推荐）**
 
-之后双击正常使用。如果你用 Homebrew，欢迎装好后帮忙提交 cask。
+```bash
+curl -fsSL https://raw.githubusercontent.com/wu529778790/livesub-player/main/install.sh | bash
+```
+
+自动识别最新 Release（含 prerelease）、下载、安装到 /Applications、清理旧版本。指定版本：`| bash -s -- v0.2.0-alpha`。
+
+**方式二：Homebrew**
+
+```bash
+brew tap wu529778790/tap https://github.com/wu529778790/homebrew-tap
+brew install --cask livesub-player
+```
+
+之后 `brew upgrade --cask livesub-player` 跟版本走。cask 定义见 [packaging/cask/livesub-player.rb](packaging/cask/livesub-player.rb)。
+
+**方式三：手动下载**
+
+从 [Releases](https://github.com/wu529778790/livesub-player/releases) 下载 `*-macOS.zip` 解压，拖进「应用程序」。浏览器下载的文件带隔离标记，**首次打开需右键 → 打开 → 再点打开**（只需一次），或终端执行 `xattr -cr /Applications/LiveSub-Player.app`。
 
 ## 从源码构建
 
