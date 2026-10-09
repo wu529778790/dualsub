@@ -66,6 +66,7 @@ struct mpv_event {
     data: *mut c_void,
 }
 
+const MPV_FORMAT_STRING: c_int = 1;
 const MPV_FORMAT_INT64: c_int = 4;
 const MPV_FORMAT_FLAG: c_int = 3;
 const MPV_FORMAT_DOUBLE: c_int = 5;
@@ -190,6 +191,24 @@ fn ensure_mpv(window: &tauri::WebviewWindow) -> Result<*mut c_void, String> {
             mpv_terminate_destroy(ctx);
             return Err(mpv_err(r, "set_option wid"));
         }
+        // seek 后黑屏缓解（线上实测）：默认 vo=gpu-next 走 Metal 直显（MoltenVK），
+        // 嵌入场景下 seek 后可能不再出帧——强制走 OpenGL 层路径规避；
+        // hwdec 显式软解，避开 VideoToolbox 表面在 seek 时重建。
+        // 两项设置失败不致命（保持默认继续），LIVESUB_VO 可覆盖便于对比测试。
+        let vo = std::env::var("LIVESUB_VO").unwrap_or_else(|_| "gpu".to_string());
+        let c_vo = CString::new(vo).unwrap();
+        let _ = mpv_set_option(
+            ctx,
+            c"vo".as_ptr(),
+            MPV_FORMAT_STRING,
+            c_vo.as_ptr().cast(),
+        );
+        let _ = mpv_set_option(
+            ctx,
+            c"hwdec".as_ptr(),
+            MPV_FORMAT_STRING,
+            c"no".as_ptr().cast(),
+        );
         let r = mpv_initialize(ctx);
         if r < 0 {
             mpv_terminate_destroy(ctx);
