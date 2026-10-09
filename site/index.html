@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DualSub — 打开视频，字幕跟上</title>
+<meta name="description" content="跨平台桌面播放器：whisper 实时语音识别生成双语字幕，在线/本地混合翻译，安装包不到 4 MB，全离线兜底。" />
+<style>
+  :root {
+    --bg: #0b0c10;
+    --bg2: #12131a;
+    --card: rgba(255, 255, 255, 0.04);
+    --border: rgba(255, 255, 255, 0.1);
+    --text: #e8e9ee;
+    --muted: #9aa0ad;
+    --accent: #5b7cfa;
+    --accent2: #8b5cf6;
+    --gold: #ffd479;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-decoration: none; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  /* 顶栏 */
+  nav {
+    position: sticky; top: 0; z-index: 10;
+    backdrop-filter: blur(12px);
+    background: rgba(11, 12, 16, 0.75);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-inner { display: flex; align-items: center; gap: 28px; height: 60px; }
+  .logo { font-weight: 800; font-size: 18px; letter-spacing: 0.5px; }
+  .logo span { color: var(--accent); }
+  .nav-links { display: flex; gap: 24px; font-size: 14px; color: var(--muted); margin-left: auto; }
+  .nav-links a:hover { color: var(--text); }
+
+  /* Hero */
+  .hero { padding: 96px 0 72px; text-align: center; position: relative; overflow: hidden; }
+  .hero::before {
+    content: ""; position: absolute; inset: -40% -20% auto;
+    height: 600px;
+    background: radial-gradient(ellipse at center, rgba(91, 124, 250, 0.18), transparent 60%);
+    pointer-events: none;
+  }
+  .hero h1 { font-size: 52px; font-weight: 800; line-height: 1.2; letter-spacing: 1px; }
+  .hero h1 em { font-style: normal; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero p.tag { margin: 20px auto 0; max-width: 640px; color: var(--muted); font-size: 18px; }
+  .hero .cta { margin-top: 36px; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 13px 26px; border-radius: 10px; font-size: 15px; font-weight: 600;
+    border: 1px solid var(--border); transition: all 0.15s;
+  }
+  .btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); border: none; color: #fff; }
+  .btn.primary:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(91, 124, 250, 0.35); }
+  .btn.ghost:hover { border-color: rgba(255,255,255,0.3); background: var(--card); }
+  .hero .platforms { margin-top: 16px; font-size: 13px; color: var(--muted); }
+  .hero .platforms b { color: #7ddb8a; font-weight: 600; }
+
+  /* 字幕演示条 */
+  .demo {
+    margin: 56px auto 0; max-width: 720px;
+    border-radius: 14px; border: 1px solid var(--border);
+    background: linear-gradient(180deg, #16181f, #0e0f14);
+    padding: 20px 24px; text-align: center;
+  }
+  .demo .bar { display: flex; gap: 6px; margin-bottom: 18px; }
+  .demo .bar i { width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,0.15); }
+  .demo .bar i:first-child { background: #ff5f57; }
+  .demo .bar i:nth-child(2) { background: #febc2e; }
+  .demo .bar i:nth-child(3) { background: #28c840; }
+  .sub-src { font-size: 22px; font-weight: 700; text-shadow: 0 0 6px rgba(0,0,0,0.9); }
+  .sub-dst { margin-top: 8px; font-size: 18px; font-weight: 600; color: var(--gold); text-shadow: 0 0 6px rgba(0,0,0,0.9); }
+  .demo .progress { margin-top: 18px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.12); overflow: hidden; }
+  .demo .progress i { display: block; height: 100%; width: 38%; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+  .demo .progress-label { margin-top: 8px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* 章节 */
+  section { padding: 72px 0; }
+  section.alt { background: var(--bg2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  h2 { font-size: 30px; font-weight: 800; text-align: center; }
+  .section-sub { text-align: center; color: var(--muted); margin: 10px 0 44px; font-size: 15px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 26px; transition: border-color 0.15s;
+  }
+  .card:hover { border-color: rgba(91, 124, 250, 0.45); }
+  .card .icon { font-size: 26px; }
+  .card h3 { font-size: 17px; margin: 12px 0 8px; }
+  .card p { font-size: 14px; color: var(--muted); }
+
+  /* 步骤 */
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; counter-reset: step; }
+  .step { position: relative; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 26px; }
+  .step::before {
+    counter-increment: step; content: counter(step);
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; font-weight: 700;
+  }
+  .step h3 { font-size: 16px; margin: 14px 0 8px; }
+  .step p { font-size: 14px; color: var(--muted); }
+
+  /* FAQ */
+  .faq { max-width: 760px; margin: 0 auto; }
+  details { border: 1px solid var(--border); border-radius: 12px; padding: 18px 22px; margin-bottom: 12px; background: var(--card); }
+  summary { cursor: pointer; font-weight: 600; font-size: 15px; }
+  details p { margin-top: 10px; font-size: 14px; color: var(--muted); }
+  details code { background: rgba(255,255,255,0.08); padding: 2px 8px; border-radius: 5px; font-size: 13px; }
+
+  /* 路线表 */
+  .roadmap { max-width: 760px; margin: 0 auto; font-size: 14px; }
+  .roadmap li { list-style: none; padding: 10px 0; border-bottom: 1px dashed var(--border); display: flex; gap: 12px; }
+  .roadmap li:last-child { border: none; }
+  .roadmap .done { color: #7ddb8a; }
+  .roadmap .doing { color: var(--gold); }
+  .roadmap .todo { color: var(--muted); }
+
+  footer { border-top: 1px solid var(--border); padding: 36px 0; text-align: center; color: var(--muted); font-size: 13px; }
+  footer a { color: var(--text); }
+
+  @media (max-width: 640px) {
+    .hero h1 { font-size: 34px; }
+    .nav-links { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-inner">
+    <a class="logo" href="#">Dual<span>Sub</span></a>
+    <div class="nav-links">
+      <a href="#features">特性</a>
+      <a href="#how">工作原理</a>
+      <a href="#install">安装</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/wu529778790/dualsub/releases" target="_blank">下载</a>
+      <a href="https://github.com/wu529778790/dualsub" target="_blank">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>打开视频，<em>字幕跟上</em></h1>
+    <p class="tag">
+      把本地视频丢进播放器，whisper 实时生成字幕、翻译随后跟上。
+      原文 / 译文 / 双语一键切换——不用找字幕，不用调时间轴。
+    </p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/wu529778790/dualsub/releases/latest">下载最新版</a>
+      <a class="btn ghost" href="https://github.com/wu529778790/dualsub" target="_blank">查看源码</a>
+    </div>
+    <p class="platforms">
+      macOS <b>可用</b> · Windows / Linux 构建中 · 安装包 &lt; 30 MB，模型按需下载
+    </p>
+    <div class="demo">
+      <div class="bar"><i></i><i></i><i></i></div>
+      <div class="sub-src">動画を開くと、字幕がついてくる</div>
+      <div class="sub-dst">打开视频，字幕跟上</div>
+      <div class="progress"><i></i></div>
+      <div class="progress-label">正在识别 00:24 – 00:36</div>
+    </div>
+  </div>
+</header>
+
+<section id="features" class="alt">
+  <div class="wrap">
+    <h2>为「看懂」而生</h2>
+    <p class="section-sub">目标是能看懂、跟得上，不是发行级字幕——产品边界很克制</p>
+    <div class="grid">
+      <div class="card"><div class="icon">🎯</div><h3>实时字幕</h3><p>whisper 在后台边播边识别，进度实时可见——「正在识别 xx:xx–xx:xx」，绝不让你以为卡死。静音段自动跳过，幻觉文本多重过滤。</p></div>
+      <div class="card"><div class="icon">🔀</div><h3>三模式一键切换</h3><p>译文（看剧）/ 原文（对照）/ 双语（学习），按键 1 / 2 / 3 随手切。翻译未就绪时原文先上屏，看剧永不停。</p></div>
+      <div class="card"><div class="icon">🌐</div><h3>混合翻译</h3><p>在线免费翻译默认优先，秒回零算力；被内容过滤或断网时，自动落回本地模型——全离线、无视屏蔽。</p></div>
+      <div class="card"><div class="icon">📦</div><h3>轻量安装包</h3><p>安装包不到 30 MB：libmpv 运行时内嵌，模型（识别 ~466MB / 本地翻译 ~4.4GB）按需下载、断点续传。</p></div>
+      <div class="card"><div class="icon">🗺️</div><h3>现成字幕优先</h3><p>视频同目录有 SRT/ASS 就直接加载（自动嗅探编码，GBK 不乱码）；没有的话实时字幕随时顶上。</p></div>
+      <div class="card"><div class="icon">🛡️</div><h3>干净的退出</h3><p>拉起的所有子进程（翻译服务、音频抽取）随主程序退出全部收割，绝不留后台。</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <h2>工作原理</h2>
+    <p class="section-sub">识别是软实时：领先播放太多自动等待，seek 直接丢弃当前窗口重启管线</p>
+    <div class="steps">
+      <div class="step"><h3>实时识别</h3><p>ffmpeg 管道持续抽取音频 → 静音检测过滤 → whisper（whisper.cpp GGML）逐窗推理，时间戳与画面精确对齐。</p></div>
+      <div class="step"><h3>智能翻译</h3><p>字幕按 3–5 句攒批送翻译：在线免费端点优先，混元 MT-7B 本地模型兜底；带持久缓存，回看零开销。</p></div>
+      <div class="step"><h3>字幕上屏</h3><p>译文到达前原文先显示，译文平滑替换。双语上下排布、字号描边可调，全部 DOM 渲染不糊画面。</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="install" class="alt">
+  <div class="wrap">
+    <h2>安装</h2>
+    <p class="section-sub">从 GitHub Releases 下载对应平台的安装包</p>
+    <div class="faq">
+      <details open>
+        <summary>macOS：首次打开提示「无法验证开发者」</summary>
+        <p>应用未做付费签名公证（个人免费项目）。首次打开：<b>右键 → 打开 → 再点打开</b>（只需一次）；或终端执行 <code>xattr -cr /Applications/DualSub.app</code>。之后双击正常使用。</p>
+      </details>
+      <details>
+        <summary>首次启动要下载什么？</summary>
+        <p>首次使用向导会引导下载语音识别模型（~466MB，small 均衡档，也可选 base 快速档）。在线翻译开箱即用；想要全离线/无屏蔽的本地翻译，可再下载混元 MT-7B 模型（~4.4GB，断点续传）。</p>
+      </details>
+      <details>
+        <summary>Windows / Linux 版呢？</summary>
+        <p>安装包已可构建（CI 每次提交自动验证），播放内核接入中——先下载仅能体验界面。关注 Releases 获取更新。</p>
+      </details>
+      <details>
+        <summary>和找现成字幕比，体验差在哪？</summary>
+        <p>实时字幕是「能看懂、跟得上」级别：偶尔晚半拍、专有名词可能不准。有现成字幕时请优先用现成的——播放器会自动加载。</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <h2>常见问题</h2>
+    <p class="section-sub">更多细节见仓库内的技术方案文档</p>
+    <div class="faq">
+      <details>
+        <summary>在线翻译被内容过滤了怎么办？</summary>
+        <p>这正是本地模型存在的意义：设置页一键下载混元 MT-7B（~4.4GB），翻译完全在本地进行，离线可用、无任何内容屏蔽。</p>
+      </details>
+      <details>
+        <summary>为什么安装包这么小？</summary>
+        <p>识别与翻译模型加起来好几个 GB，打包进去只会劝退下载。我们只带运行时（~30MB），模型按需拉取、支持断点续传。</p>
+      </details>
+      <details>
+        <summary>会采集我的数据吗？</summary>
+        <p>识别永远在本地。使用在线翻译时，字幕文本会发送给翻译服务——介意的话切到「仅本地模型」引擎，全程断网也能用。</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section class="alt">
+  <div class="wrap">
+    <h2>路线图</h2>
+    <p class="section-sub">进度见 GitHub 项目与 Releases</p>
+    <ul class="roadmap">
+      <li><span class="done">✔</span> 实时字幕管线 + 播放内核（macOS）</li>
+      <li><span class="done">✔</span> 在线/本地混合翻译 + 模型下载管理</li>
+      <li><span class="doing">●</span> Windows / Linux 播放内核接入</li>
+      <li><span class="doing">●</span> 网络流播放（URL / m3u8）</li>
+      <li><span class="todo">○</span> 播放列表、截图、字幕导出 SRT</li>
+      <li><span class="todo">○</span> 「学习模式」：点击查词、生词本</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>DualSub · 打开视频，字幕跟上 · <a href="https://github.com/wu529778790/dualsub" target="_blank">GitHub</a> · <a href="https://github.com/wu529778790/dualsub/releases" target="_blank">下载</a></p>
+  </div>
+</footer>
+
+</body>
+</html>
