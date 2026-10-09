@@ -45,9 +45,10 @@
       </p>
     </div>
 
-    <!-- 视频区域：背景全透明，透出下层 mpv 画面；输入由前端接管 -->
+    <!-- 视频区域：播放中背景全透明，透出下层 mpv 画面；未加载时给不透明底色防空洞透桌；输入由前端接管 -->
     <main
       class="stage"
+      :class="{ 'stage-empty': !loaded }"
       @click="onStageClick"
       @dblclick="toggleFullscreen"
       @dragover.prevent
@@ -595,6 +596,12 @@ onMounted(async () => {
   position: relative;
   background: transparent;
   cursor: default;
+}
+
+/* 窗口本身 transparent: true（字幕 overlay 依赖），未加载视频时 mpv 子窗口为空，
+   整窗会看穿到桌面/其他应用——此时给不透明底色；加载后必须保持透明透出画面 */
+.stage-empty {
+  background: #101014;
 }
 
 .panel {
