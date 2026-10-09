@@ -98,6 +98,12 @@
           {{ downloading ? `下载中 ${downloadPct}%` : "下载本地模型" }}
         </button>
       </div>
+
+      <!-- 新版本提示（替代 updater：未签名 app 不走自动更新） -->
+      <div v-if="updateInfo?.hasUpdate" class="update-bar">
+        <span>新版本 v{{ updateInfo.latest }} 可用（当前 v{{ updateInfo.current }}）</span>
+        <button class="btn small" @click.stop="openReleases">去下载</button>
+      </div>
     </main>
 
     <!-- 控制栏 -->
@@ -186,6 +192,9 @@ const downloadingName = ref("");
 const whisperModel = ref("small");
 const showWizard = ref(false);
 const wizardDownloading = ref(false);
+
+// 新版本提示
+const updateInfo = ref<{ current: string; latest: string; hasUpdate: boolean } | null>(null);
 const recognizing = ref<{ start: number; end: number } | null>(null);
 const asrError = ref("");
 const mode = ref<"译文" | "原文" | "双语">("双语");
@@ -305,7 +314,13 @@ onMounted(async () => {
   showWizard.value =
     !modelStatus.value.find((m) => m.name === "whisper-small")?.installed &&
     (await invoke<string>("cmd_get_setting", { key: "wizard_done" })) !== "1";
+  // 新版本检查（静默失败即可）
+  updateInfo.value = await invoke("cmd_check_update").catch(() => null);
 });
+
+async function openReleases() {
+  await invoke("cmd_open_releases").catch((e) => (status.value = String(e)));
+}
 
 async function refreshModelStatus() {
   modelStatus.value = await invoke<ModelStatus[]>("cmd_model_status");
@@ -789,6 +804,24 @@ onMounted(async () => {
   font-size: 12px;
   color: #ffe1a1;
   max-width: 72%;
+}
+
+/* 新版本提示条 */
+.update-bar {
+  position: absolute;
+  top: 50px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  background: rgba(30, 60, 110, 0.9);
+  border: 1px solid rgba(121, 169, 255, 0.4);
+  font-size: 12px;
+  color: #cfe1ff;
+  z-index: 15;
 }
 
 .btn.small {
