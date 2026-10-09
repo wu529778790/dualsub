@@ -26,6 +26,11 @@ unsafe extern "C" {
         format: c_int,
         data: *const c_void,
     ) -> i32;
+    fn mpv_set_option_string(
+        ctx: *mut c_void,
+        name: *const c_char,
+        data: *const c_char,
+    ) -> i32;
     fn mpv_set_property(
         ctx: *mut c_void,
         name: *const c_char,
@@ -66,7 +71,6 @@ struct mpv_event {
     data: *mut c_void,
 }
 
-const MPV_FORMAT_STRING: c_int = 1;
 const MPV_FORMAT_INT64: c_int = 4;
 const MPV_FORMAT_FLAG: c_int = 3;
 const MPV_FORMAT_DOUBLE: c_int = 5;
@@ -197,18 +201,8 @@ fn ensure_mpv(window: &tauri::WebviewWindow) -> Result<*mut c_void, String> {
         // 两项设置失败不致命（保持默认继续），LIVESUB_VO 可覆盖便于对比测试。
         let vo = std::env::var("LIVESUB_VO").unwrap_or_else(|_| "gpu".to_string());
         let c_vo = CString::new(vo).unwrap();
-        let _ = mpv_set_option(
-            ctx,
-            c"vo".as_ptr(),
-            MPV_FORMAT_STRING,
-            c_vo.as_ptr().cast(),
-        );
-        let _ = mpv_set_option(
-            ctx,
-            c"hwdec".as_ptr(),
-            MPV_FORMAT_STRING,
-            c"no".as_ptr().cast(),
-        );
+        let _ = mpv_set_option_string(ctx, c"vo".as_ptr(), c_vo.as_ptr());
+        let _ = mpv_set_option_string(ctx, c"hwdec".as_ptr(), c"no".as_ptr());
         let r = mpv_initialize(ctx);
         if r < 0 {
             mpv_terminate_destroy(ctx);
