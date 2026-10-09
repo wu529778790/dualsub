@@ -413,7 +413,7 @@ pub fn player_load(app: &AppHandle, path: String) -> Result<(), String> {
             if client.is_null() {
                 eprintln!("[player] 事件 client 创建失败");
             } else {
-                unsafe { mpv_request_log_messages(client, c"info".as_ptr()) };
+                mpv_request_log_messages(client, c"info".as_ptr());
                 for (name, fmt) in [
                     (c"time-pos", MPV_FORMAT_DOUBLE),
                     (c"duration", MPV_FORMAT_DOUBLE),
