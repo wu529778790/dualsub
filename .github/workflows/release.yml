@@ -56,6 +56,13 @@ jobs:
           APP="src-tauri/target/release/bundle/macos/DualSub.app"
           # 递归收集主程序依赖的动态库（libmpv 及其 Homebrew 依赖树）拷进 .app 并重写路径
           dylibbundler -cd -b -x "$APP/Contents/MacOS/dualsub" -d "$APP/Contents/libs"
+          # dylibbundler 会给内嵌库写重复的 LC_RPATH，dyld 拒绝加载——全部删掉
+          # （依赖路径已是 @executable_path/../libs/ 直达，rpath 无必要）
+          for f in "$APP/Contents/libs/"*; do
+            n=$(otool -l "$f" | grep -c "path @executable_path/../libs/" || true)
+            for i in $(seq 1 "$n"); do install_name_tool -delete_rpath "@executable_path/../libs/" "$f" 2>/dev/null || true; done
+            codesign --force -s - "$f"
+          done
           # ad-hoc 重签保持包有效
           codesign --force --deep -s - "$APP"
 
