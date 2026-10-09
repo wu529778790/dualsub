@@ -12,7 +12,7 @@ use std::sync::Mutex;
 
 use objc2::rc::Retained;
 use objc2::MainThreadMarker;
-use objc2_app_kit::{NSView, NSWindowOrderingMode};
+use objc2_app_kit::{NSColor, NSView, NSWindowOrderingMode};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -158,6 +158,13 @@ fn ensure_mpv(window: &tauri::WebviewWindow) -> Result<*mut c_void, String> {
             objc2_app_kit::NSAutoresizingMaskOptions::ViewWidthSizable
                 | objc2_app_kit::NSAutoresizingMaskOptions::ViewHeightSizable,
         );
+        // 不透明黑底：窗口 transparent:true，mpv aspect-fit 的信箱区若不铺黑
+        // 会直接看穿到桌面/其他应用（线上实测）
+        view.setWantsLayer(true);
+        if let Some(layer) = view.layer() {
+            let black = NSColor::blackColor();
+            layer.setBackgroundColor(Some(&black.CGColor()));
+        }
         // 垫到 WKWebView 之下（spike-1 已验证）
         content.addSubview_positioned_relativeTo(
             &view,
@@ -362,6 +369,9 @@ pub fn player_load(app: &AppHandle, path: String) -> Result<(), String> {
         };
 
         // 事件线程 + 属性观察只挂一次（进程生命周期内只有一个 mpv 实例）
+        // 注意：mpv 的属性变化事件只投递给「观察它的句柄」——必须观察在
+        // client 上（事件线程 drain 的就是它）。挂在主 handle 上事件永远
+        // 出不来（v0.2.0 及之前的时间/时长/暂停推送全是死的，血泪教训）。
         static INIT: std::sync::Once = std::sync::Once::new();
         INIT.call_once(|| unsafe {
             let client_name = c"livesub-events";
@@ -369,14 +379,14 @@ pub fn player_load(app: &AppHandle, path: String) -> Result<(), String> {
             if client.is_null() {
                 eprintln!("[player] 事件 client 创建失败");
             } else {
+                for (name, fmt) in [
+                    (c"time-pos", MPV_FORMAT_DOUBLE),
+                    (c"duration", MPV_FORMAT_DOUBLE),
+                    (c"pause", MPV_FORMAT_FLAG),
+                ] {
+                    mpv_observe_property(client, 0, name.as_ptr(), fmt);
+                }
                 spawn_event_thread(app.clone(), MpvPtr(client));
-            }
-            for (name, fmt) in [
-                (c"time-pos", MPV_FORMAT_DOUBLE),
-                (c"duration", MPV_FORMAT_DOUBLE),
-                (c"pause", MPV_FORMAT_FLAG),
-            ] {
-                mpv_observe_property(ctx, 0, name.as_ptr(), fmt);
             }
         });
 
@@ -455,6 +465,24 @@ pub fn player_get_state(app: &AppHandle) -> Result<PlayerEvent, String> {
     }
 }
 
+/// 截图到桌面（含 mpv 字幕轨渲染的外挂字幕；实时识别字幕是 DOM overlay 不在画面内）
+pub fn player_screenshot(app: &AppHandle) -> Result<String, String> {
+    let ctx = current_mpv(app)?;
+    let home = std::env::var("HOME").map_err(|_| "拿不到 HOME 目录")?;
+    let dir = PathBuf::from(home).join("Desktop");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis();
+    let path = dir.join(format!("LiveSub-截图-{ts}.png"));
+    unsafe {
+        let cpath = CString::new(path.to_string_lossy().as_bytes()).unwrap();
+        cmd(ctx, &[c"screenshot-to-file", cpath.as_c_str(), c"subtitles"])?;
+    }
+    Ok(path.to_string_lossy().to_string())
+}
+
 fn current_mpv(app: &AppHandle) -> Result<*mut c_void, String> {
     let st = app.state::<PlayerState>();
     let guard = st.mpv.lock().unwrap();
@@ -498,6 +526,11 @@ pub fn cmd_player_toggle_fullscreen(app: AppHandle) -> Result<bool, String> {
 #[tauri::command]
 pub fn cmd_player_get_state(app: AppHandle) -> Result<PlayerEvent, String> {
     player_get_state(&app)
+}
+
+#[tauri::command]
+pub fn cmd_player_screenshot(app: AppHandle) -> Result<String, String> {
+    player_screenshot(&app)
 }
 
 /// 生成 30s 测试视频（彩条+正弦音），开发用

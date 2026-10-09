@@ -59,6 +59,11 @@ pub fn cmd_player_get_state() -> Result<PlayerEvent, String> {
     Err(UNSUPPORTED.into())
 }
 
+#[tauri::command]
+pub fn cmd_player_screenshot() -> Result<String, String> {
+    Err(UNSUPPORTED.into())
+}
+
 /// 生成 30s 测试视频（跨平台，ffmpeg 在 PATH）
 #[tauri::command]
 pub fn cmd_gen_test_video() -> Result<String, String> {

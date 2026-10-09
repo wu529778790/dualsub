@@ -105,22 +105,31 @@
         <span>新版本 v{{ updateInfo.latest }} 可用（当前 v{{ updateInfo.current }}）</span>
         <button class="btn small" @click.stop="openReleases">去下载</button>
       </div>
+
+      <!-- 操作反馈 OSD（截图/快进快退等，2.5s 自动消失） -->
+      <div v-if="toast" class="osd">{{ toast }}</div>
     </main>
 
     <!-- 控制栏 -->
     <footer v-if="loaded" class="controls">
       <button class="ctl-btn" @click="togglePause">{{ paused ? "▶" : "⏸" }}</button>
+      <button class="ctl-btn" title="后退 10s（←）" @click="seekBy(-10)">⏪</button>
       <span class="time">{{ fmtTime(displayTime) }}</span>
       <div
         ref="barRef"
         class="progress"
         @pointerdown="startDrag"
-        @pointermove="onDrag"
+        @pointermove="onBarMove"
         @pointerup="endDrag"
         @pointercancel="endDrag"
+        @pointerenter="hovering = true"
+        @pointerleave="onBarLeave"
       >
         <div class="progress-fill" :style="{ width: progressPct }" />
         <div class="progress-thumb" :style="{ left: progressPct }" />
+        <div v-if="hovering" class="progress-tip" :style="{ left: hoverPct }">
+          {{ fmtTime(hoverTime) }}
+        </div>
       </div>
       <span class="time">/ {{ fmtTime(duration) }}</span>
       <select class="speed" :value="speed" @change="changeSpeed">
@@ -130,6 +139,7 @@
         <option :value="1.25">1.25x</option>
         <option :value="1.5">1.5x</option>
         <option :value="2">2x</option>
+        <option :value="3">3x</option>
       </select>
       <span class="vol-label">音量</span>
       <input
@@ -141,6 +151,7 @@
         @input="changeVolume"
       />
       <span class="vol-num">{{ Math.round(volume) }}</span>
+      <button class="ctl-btn" title="截图到桌面（S）" @click="screenshot">📷</button>
       <button class="ctl-btn" @click="toggleFullscreen">⛶</button>
     </footer>
   </div>
@@ -224,6 +235,22 @@ const activeTranslation = computed(() => {
 });
 
 const barRef = ref<HTMLElement | null>(null);
+
+// 进度条悬停预览
+const hovering = ref(false);
+const hoverTime = ref(0);
+const hoverPct = computed(
+  () => `${(hoverTime.value / (duration.value || 1)) * 100}%`
+);
+
+// OSD 操作反馈
+const toast = ref("");
+let toastTimer: number | undefined;
+function showToast(msg: string) {
+  toast.value = msg;
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => (toast.value = ""), 2500);
+}
 
 let unlisten: UnlistenFn | null = null;
 
@@ -404,6 +431,17 @@ async function seekAbsolute(t: number) {
 async function seekBy(delta: number) {
   const next = Math.min(duration.value, Math.max(0, timePos.value + delta));
   await seekAbsolute(next);
+  showToast(`${delta > 0 ? "快进" : "快退"} ${Math.abs(delta)}s → ${fmtTime(next)}`);
+}
+
+async function screenshot() {
+  try {
+    const p = await invoke<string>("cmd_player_screenshot");
+    showToast(`截图已保存到桌面`);
+    void p;
+  } catch (e) {
+    status.value = String(e);
+  }
 }
 
 async function changeVolume(e: Event) {
@@ -418,27 +456,30 @@ async function changeSpeed(e: Event) {
   await invoke("cmd_player_set_speed", { speed: s }).catch((e) => (status.value = String(e)));
 }
 
-// ---- 进度条拖动 ----
+// ---- 进度条拖动 + 悬停预览 ----
+function ratioAt(e: PointerEvent): number {
+  const bar = barRef.value;
+  if (!bar || !duration.value) return 0;
+  const rect = bar.getBoundingClientRect();
+  return Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+}
 function startDrag(e: PointerEvent) {
   dragging.value = true;
   (e.target as HTMLElement).setPointerCapture(e.pointerId);
-  updateDrag(e);
+  displayTime.value = ratioAt(e) * duration.value;
 }
-function onDrag(e: PointerEvent) {
-  if (dragging.value) updateDrag(e);
+function onBarMove(e: PointerEvent) {
+  hoverTime.value = ratioAt(e) * duration.value;
+  if (dragging.value) displayTime.value = hoverTime.value;
+}
+function onBarLeave() {
+  hovering.value = false;
 }
 function endDrag(e: PointerEvent) {
   if (!dragging.value) return;
-  updateDrag(e);
+  displayTime.value = ratioAt(e) * duration.value;
   dragging.value = false;
   seekAbsolute(displayTime.value);
-}
-function updateDrag(e: PointerEvent) {
-  const bar = barRef.value;
-  if (!bar || !duration.value) return;
-  const rect = bar.getBoundingClientRect();
-  const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-  displayTime.value = ratio * duration.value;
 }
 
 // ---- 打开文件 ----
@@ -517,6 +558,10 @@ function onKey(e: KeyboardEvent) {
     case "f":
     case "F":
       toggleFullscreen();
+      break;
+    case "s":
+    case "S":
+      screenshot();
       break;
   }
 }
@@ -877,26 +922,71 @@ onMounted(async () => {
   position: absolute;
   left: 0;
   right: 0;
-  height: 4px;
-  border-radius: 2px;
+  height: 5px;
+  border-radius: 3px;
   background: rgba(255, 255, 255, 0.2);
+  transition: height 0.12s;
+}
+
+.progress:hover::before {
+  height: 8px;
 }
 
 .progress-fill {
   position: absolute;
   left: 0;
-  height: 4px;
-  border-radius: 2px;
+  height: 5px;
+  border-radius: 3px;
   background: #4f6ef7;
+  transition: height 0.12s;
+}
+
+.progress:hover .progress-fill {
+  height: 8px;
 }
 
 .progress-thumb {
   position: absolute;
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: #fff;
   transform: translateX(-50%);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.progress:hover .progress-thumb {
+  opacity: 1;
+}
+
+.progress-tip {
+  position: absolute;
+  bottom: 18px;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(10, 10, 14, 0.92);
+  color: #fff;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.osd {
+  position: absolute;
+  left: 50%;
+  top: 18px;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 6px;
+  background: rgba(10, 10, 14, 0.85);
+  color: #fff;
+  font-size: 13px;
+  pointer-events: none;
+  z-index: 10;
 }
 
 .speed {
