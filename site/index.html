@@ -205,11 +205,19 @@
 <section id="install" class="alt">
   <div class="wrap">
     <h2>安装</h2>
-    <p class="section-sub">从 GitHub Releases 下载对应平台的安装包</p>
+    <p class="section-sub">macOS（Apple Silicon）：三种方式任选，装完双击即开</p>
     <div class="faq">
       <details open>
-        <summary>macOS：首次打开提示「无法验证开发者」</summary>
-        <p>应用未做付费签名公证（个人免费项目）。首次打开：<b>右键 → 打开 → 再点打开</b>（只需一次）；或终端执行 <code>xattr -cr /Applications/LiveSub-Player.app</code>。之后双击正常使用。</p>
+        <summary>方式一：一键脚本（推荐）</summary>
+        <p>终端执行 <code>curl -fsSL https://raw.githubusercontent.com/wu529778790/livesub-player/main/install.sh | bash</code>。命令行下载不带隔离标记，安装完直接打开，无任何提示。指定版本：<code>| bash -s -- v0.2.2</code>。</p>
+      </details>
+      <details>
+        <summary>方式二：Homebrew</summary>
+        <p><code>brew tap wu529778790/tap https://github.com/wu529778790/homebrew-tap && brew install --cask livesub-player</code>。之后 <code>brew upgrade --cask livesub-player</code> 跟版本走。</p>
+      </details>
+      <details>
+        <summary>方式三：手动下载</summary>
+        <p>从 <a href="https://github.com/wu529778790/livesub-player/releases">Releases</a> 下载 <code>*-macOS.zip</code> 解压，拖进「应用程序」。浏览器下载带隔离标记，首次打开：<b>右键 → 打开 → 再点打开</b>（只需一次）；或终端执行 <code>xattr -cr /Applications/LiveSub-Player.app</code>。</p>
       </details>
       <details>
         <summary>首次启动要下载什么？</summary>
