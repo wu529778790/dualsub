@@ -1,15 +1,22 @@
-//! M1 播放内核：libmpv 进程内集成（macOS：NSView 垫底 + wid 绑定）
+//! M1 播放内核：libmpv 进程内集成（macOS：render API SW 自绘，不再用 --wid）
+//!
+//! 渲染链路：mpv(vo=libmpv) → SW 渲染 BGRA 缓冲 → 主线程组 CGImage → 宿主视图 layer
+//! 为什么不用 --wid：wid 模式下 mpv 自己管理嵌入视图，实测 seek 后概率性黑屏
+//! （视频输出链路死亡、音频/识别正常），且官方文档明示嵌入场景应使用 render API。
 //!
 //! 架构（技术方案 §4）：
 //! - 主 handle（mpv_create）：命令/属性写入
 //! - 事件 handle（mpv_create_client）：专用线程 drain 事件，观察 time-pos/duration/pause
 //!   推给前端（tauri emit），FILE_LOADED 时补挂外挂字幕
+//! - 渲染线程：update 回调 → SW 渲染 BGRA → 主线程提交 layer
 //! - whisper 进程内、llama-server 由 mt 模块管理，此处不管子进程
 
 use std::ffi::{c_char, c_double, c_int, c_void, CStr, CString};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering};
+use std::sync::{Condvar, Mutex, OnceLock};
 
+use objc2::msg_send;
 use objc2::rc::Retained;
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSColor, NSView, NSWindowOrderingMode};
@@ -55,7 +62,64 @@ unsafe extern "C" {
     fn mpv_create_client(ctx: *mut c_void, name: *const c_char) -> *mut c_void;
     #[allow(dead_code)]
     fn mpv_terminate_destroy(ctx: *mut c_void);
+
+    // ---------- mpv render API（枚举值见 /opt/homebrew/include/mpv/render.h） ----------
+    fn mpv_render_context_create(
+        res: *mut *mut c_void,
+        mpv: *mut c_void,
+        params: *mut mpv_render_param,
+    ) -> i32;
+    #[allow(dead_code)]
+    fn mpv_render_context_render(ctx: *mut c_void, params: *mut mpv_render_param) -> i32;
+    fn mpv_render_context_set_update_callback(
+        ctx: *mut c_void,
+        cb: Option<unsafe extern "C" fn(ctx: *mut c_void)>,
+        cb_ctx: *mut c_void,
+    );
+    #[allow(dead_code)]
+    fn mpv_render_context_report_swap(ctx: *mut c_void);
+    #[allow(dead_code)]
+    fn mpv_render_context_free(ctx: *mut c_void);
+
+    // ---------- CoreGraphics（BGRA → CGImage） ----------
+    fn CGDataProviderCreateWithData(
+        info: *mut c_void,
+        data: *const c_void,
+        size: usize,
+        release: Option<unsafe extern "C" fn(*mut c_void, *const c_void)>,
+    ) -> *mut c_void;
+    fn CGColorSpaceCreateDeviceRGB() -> *mut c_void;
+    #[allow(clippy::too_many_arguments)]
+    fn CGImageCreate(
+        w: usize,
+        h: usize,
+        bits_per_component: usize,
+        bits_per_pixel: usize,
+        bytes_per_row: usize,
+        space: *mut c_void,
+        bitmap_info: u32,
+        provider: *mut c_void,
+        decode: *const f64,
+        should_interpolate: bool,
+        intent: u32,
+    ) -> *mut c_void;
+    fn CFRelease(cf: *mut c_void);
 }
+
+#[repr(C)]
+struct mpv_render_param {
+    type_: c_int,
+    data: *mut c_void,
+}
+
+const MPV_RENDER_PARAM_API_TYPE: c_int = 1;
+const MPV_RENDER_PARAM_SW_SIZE: c_int = 17;
+const MPV_RENDER_PARAM_SW_FORMAT: c_int = 18;
+const MPV_RENDER_PARAM_SW_STRIDE: c_int = 19;
+const MPV_RENDER_PARAM_SW_POINTER: c_int = 20;
+
+// kCGImageAlphaPremultipliedFirst(2) | kCGBitmapByteOrder32Little(2<<12) → 内存序 BGRA
+const CG_BITMAP_BGRA: u32 = 2 | (2 << 12);
 
 #[repr(C)]
 struct mpv_event_property {
@@ -101,6 +165,167 @@ pub struct PlayerState {
     mpv: Mutex<Option<MpvPtr>>,
     /// FILE_LOADED 时由事件线程补挂的外挂字幕（已转 UTF-8）
     pending_subs: Mutex<Vec<PathBuf>>,
+}
+
+// ---------- render API 共享状态 ----------
+struct SendPtr(*mut c_void);
+unsafe impl Send for SendPtr {}
+
+struct RenderShared {
+    ctx: Mutex<SendPtr>,              // mpv_render_context
+    view: AtomicPtr<c_void>,          // 宿主 NSView 裸指针（仅主线程解引用）
+    app: Mutex<Option<AppHandle>>,    // 提交帧用 run_on_main_thread
+    size: Mutex<(u32, u32)>,          // 目标绘制尺寸（视图像素尺寸）
+    buffer: Mutex<Vec<u8>>,           // BGRA 帧缓冲
+    lock: Mutex<()>,                  // dirty/cond 的等待锁
+    cond: Condvar,
+    dirty: AtomicBool,
+}
+
+static RENDER: OnceLock<RenderShared> = OnceLock::new();
+
+fn render_shared() -> &'static RenderShared {
+    RENDER.get_or_init(|| RenderShared {
+        ctx: Mutex::new(SendPtr(std::ptr::null_mut())),
+        view: AtomicPtr::new(std::ptr::null_mut()),
+        app: Mutex::new(None),
+        size: Mutex::new((0, 0)),
+        buffer: Mutex::new(Vec::new()),
+        lock: Mutex::new(()),
+        cond: Condvar::new(),
+        dirty: AtomicBool::new(false),
+    })
+}
+
+unsafe extern "C" fn on_render_update(_ctx: *mut c_void) {
+    let r = render_shared();
+    r.dirty.store(true, Ordering::SeqCst);
+    let _g = r.lock.lock().unwrap();
+    r.cond.notify_all();
+}
+
+/// 渲染线程：update 回调置 dirty → SW 渲染 BGRA → 主线程提交 layer
+fn spawn_render_thread() {
+    std::thread::Builder::new()
+        .name("mpv-render".into())
+        .spawn(|| loop {
+            let r = render_shared();
+            let mut g = r.lock.lock().unwrap();
+            while !r.dirty.load(Ordering::SeqCst) {
+                g = r.cond.wait(g).unwrap();
+            }
+            r.dirty.store(false, Ordering::SeqCst);
+            drop(g);
+            render_frame(r);
+        })
+        .expect("渲染线程启动失败");
+}
+
+fn render_frame(r: &RenderShared) {
+    let ctx = r.ctx.lock().unwrap().0;
+    if ctx.is_null() {
+        return;
+    }
+    let (w, h) = *r.size.lock().unwrap();
+    if w == 0 || h == 0 {
+        return;
+    }
+    let stride = (w as usize * 4).div_ceil(64) * 64; // CG 要求 64 对齐
+    unsafe {
+        let mut buf = r.buffer.lock().unwrap();
+        if buf.len() != stride * h as usize {
+            *buf = vec![0u8; stride * h as usize];
+        }
+        let mut size = [w as i32, h as i32];
+        let mut stride_v = stride;
+        let fmt = c"bgra";
+        let mut params = [
+            mpv_render_param { type_: MPV_RENDER_PARAM_SW_SIZE, data: size.as_mut_ptr().cast() },
+            mpv_render_param { type_: MPV_RENDER_PARAM_SW_FORMAT, data: fmt.as_ptr().cast_mut().cast() },
+            mpv_render_param { type_: MPV_RENDER_PARAM_SW_STRIDE, data: (&mut stride_v as *mut usize).cast() },
+            mpv_render_param { type_: MPV_RENDER_PARAM_SW_POINTER, data: buf.as_mut_ptr().cast() },
+            mpv_render_param { type_: 0, data: std::ptr::null_mut() },
+        ];
+        let rc = mpv_render_context_render(ctx, params.as_mut_ptr());
+        static LOGGED: AtomicU32 = AtomicU32::new(0);
+        let n = LOGGED.fetch_add(1, Ordering::SeqCst);
+        if n < 3 {
+            eprintln!("[render] 第{n}帧 w={w} h={h} stride={stride} rc={rc}");
+        }
+        if rc < 0 {
+            return;
+        }
+        mpv_render_context_report_swap(ctx);
+    }
+    // 帧数据克隆后交给主线程上屏（8MB@1080p memcpy，M 系芯片无压力）
+    let frame = r.buffer.lock().unwrap().clone();
+    let app = r.app.lock().unwrap().clone();
+    if let Some(app) = app {
+        let _ = app.run_on_main_thread(move || commit_frame(&frame, w, h, stride));
+    }
+}
+
+unsafe extern "C" fn release_vec(info: *mut c_void, _data: *const c_void) {
+    drop(Box::from_raw(info as *mut Vec<u8>));
+}
+
+/// 主线程：BGRA → CGImage → layer.contents
+fn commit_frame(bgra: &Vec<u8>, w: u32, h: u32, stride: usize) {
+    let r = render_shared();
+    let view = r.view.load(Ordering::SeqCst);
+    if view.is_null() || bgra.is_empty() {
+        return;
+    }
+    unsafe {
+        let ns_view = &*(view as *const NSView);
+        // 视图尺寸可能随窗口变化：不一致则更新共享尺寸并触发重绘
+        let b = ns_view.bounds();
+        let (bw, bh) = (b.size.width as u32, b.size.height as u32);
+        if bw > 0 && bh > 0 && (bw, bh) != (w, h) {
+            *r.size.lock().unwrap() = (bw, bh);
+            r.dirty.store(true, Ordering::SeqCst);
+            let _g = r.lock.lock().unwrap();
+            r.cond.notify_all();
+        }
+        let space = CGColorSpaceCreateDeviceRGB();
+        let boxed = Box::into_raw(Box::new(bgra.clone()));
+        let provider = CGDataProviderCreateWithData(
+            boxed.cast(),
+            (*boxed).as_ptr().cast(),
+            (*boxed).len(),
+            Some(release_vec),
+        );
+        let image = CGImageCreate(
+            w as usize,
+            h as usize,
+            8,     // bits per component
+            32,    // bits per pixel
+            stride,
+            space,
+            CG_BITMAP_BGRA,
+            provider,
+            std::ptr::null(),
+            true,
+            0,     // kCGRenderingIntentDefault
+        );
+        CFRelease(provider);
+        CFRelease(space);
+        if image.is_null() {
+            eprintln!("[render] CGImageCreate 失败");
+            return;
+        }
+        if let Some(layer) = ns_view.layer() {
+            let frame_obj = image.cast::<objc2::runtime::AnyObject>();
+            let () = msg_send![&*layer, setContents: frame_obj];
+        } else {
+            eprintln!("[render] layer 不存在");
+        }
+        CFRelease(image);
+        static COMMIT_LOGGED: AtomicU32 = AtomicU32::new(0);
+        if COMMIT_LOGGED.fetch_add(1, Ordering::SeqCst) < 3 {
+            eprintln!("[render] 已提交帧 w={w} h={h}");
+        }
+    }
 }
 
 /// 推给前端的播放状态（属性变化即推）
@@ -194,25 +419,43 @@ fn ensure_mpv(window: &tauri::WebviewWindow) -> Result<*mut c_void, String> {
         if ctx.is_null() {
             return Err("mpv_create 失败".into());
         }
-        let wid: i64 = Retained::as_ptr(&mpv_view) as *const NSView as i64;
-        let r = mpv_set_option(
-            ctx,
-            c"wid".as_ptr(),
-            MPV_FORMAT_INT64,
-            (&wid as *const i64).cast(),
-        );
-        if r < 0 {
-            mpv_terminate_destroy(ctx);
-            return Err(mpv_err(r, "set_option wid"));
+        // 渲染路径：render API SW 自绘（wid 嵌入在 macOS 上 seek 概率性黑屏，弃用）。
+        // LIVESUB_EMBED=wid 可回退旧路径对比。
+        let use_wid = std::env::var("LIVESUB_EMBED").as_deref() == Ok("wid");
+        if use_wid {
+            let wid: i64 = Retained::as_ptr(&mpv_view) as *const NSView as i64;
+            let r = mpv_set_option(
+                ctx,
+                c"wid".as_ptr(),
+                MPV_FORMAT_INT64,
+                (&wid as *const i64).cast(),
+            );
+            if r < 0 {
+                mpv_terminate_destroy(ctx);
+                return Err(mpv_err(r, "set_option wid"));
+            }
+            let _ = mpv_set_option_string(ctx, c"hwdec".as_ptr(), c"no".as_ptr());
+        } else {
+            mpv_set_option_string(ctx, c"vo".as_ptr(), c"libmpv".as_ptr());
+            mpv_set_option_string(ctx, c"hwdec".as_ptr(), c"no".as_ptr());
+            // render context 必须在 mpv_initialize 之前创建
+            let api = c"sw";
+            let mut params = [
+                mpv_render_param { type_: MPV_RENDER_PARAM_API_TYPE, data: api.as_ptr().cast_mut().cast() },
+                mpv_render_param { type_: 0, data: std::ptr::null_mut() },
+            ];
+            let mut rctx: *mut c_void = std::ptr::null_mut();
+            let rc = mpv_render_context_create(&mut rctx, ctx, params.as_mut_ptr());
+            if rc < 0 {
+                mpv_terminate_destroy(ctx);
+                return Err(mpv_err(rc, "mpv_render_context_create"));
+            }
+            let r = render_shared();
+            *r.ctx.lock().unwrap() = SendPtr(rctx);
+            let b = mpv_view.bounds();
+            *r.size.lock().unwrap() = (b.size.width as u32, b.size.height as u32);
+            mpv_render_context_set_update_callback(rctx, Some(on_render_update), std::ptr::null_mut());
         }
-        // seek 后黑屏缓解（线上实测）：默认 vo=gpu-next 走 Metal 直显（MoltenVK），
-        // 嵌入场景下 seek 后可能不再出帧——强制走 OpenGL 层路径规避；
-        // hwdec 显式软解，避开 VideoToolbox 表面在 seek 时重建。
-        // 两项设置失败不致命（保持默认继续），LIVESUB_VO 可覆盖便于对比测试。
-        let vo = std::env::var("LIVESUB_VO").unwrap_or_else(|_| "gpu".to_string());
-        let c_vo = CString::new(vo).unwrap();
-        let _ = mpv_set_option_string(ctx, c"vo".as_ptr(), c_vo.as_ptr());
-        let _ = mpv_set_option_string(ctx, c"hwdec".as_ptr(), c"no".as_ptr());
         let r = mpv_initialize(ctx);
         if r < 0 {
             mpv_terminate_destroy(ctx);
@@ -220,6 +463,16 @@ fn ensure_mpv(window: &tauri::WebviewWindow) -> Result<*mut c_void, String> {
         }
         ctx
     };
+
+    // 渲染管线接线（一次性）：视图指针 + AppHandle + 渲染线程
+    let app = window.app_handle().clone();
+    let r = render_shared();
+    r.view.store(
+        Retained::as_ptr(&mpv_view) as *const NSView as *mut c_void,
+        Ordering::SeqCst,
+    );
+    *r.app.lock().unwrap() = Some(app.clone());
+    spawn_render_thread();
 
     *slot = Some(MpvPtr(ctx));
     Ok(ctx)
