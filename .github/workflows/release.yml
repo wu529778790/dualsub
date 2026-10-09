@@ -117,3 +117,16 @@ jobs:
             artifacts/*.deb
             artifacts/*.exe
             artifacts/*.zip
+
+      # 历史版本没有保留价值：仅保留最近 3 个 Release（含本次），
+      # 更早的连 Release 带 tag 一起删，避免 Release 页和 tag 列表堆积
+      - name: 清理旧 Release（仅保留最近 3 个）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '.[3:][] | [.id, .tag_name] | @tsv' \
+            | while IFS=$'\t' read -r id tag; do
+                echo "删除旧 Release: $tag (id=$id)"
+                gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/$id" || true
+                gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/$tag" || true
+              done
