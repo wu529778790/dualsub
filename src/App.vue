@@ -424,6 +424,7 @@ async function installUpdate() {
   updatePct.value = 0;
   const ok = await invoke("cmd_install_update").catch((e) => {
     status.value = String(e);
+    updatePct.value = null; // 失败后恢复「立即更新」按钮可点
     return false;
   });
   if (!ok && updatePct.value !== null && updatePct.value < 100) updatePct.value = null;
