@@ -1,6 +1,6 @@
 [package]
 name = "livesub-player"
-version = "0.2.1"
+version = "0.2.2"
 description = "打开视频，字幕跟上。跨平台桌面播放器，实时双语字幕，全离线运行。"
 edition = "2021"
 default-run = "livesub-player"
