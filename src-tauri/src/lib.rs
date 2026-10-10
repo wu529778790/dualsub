@@ -33,13 +33,8 @@ pub fn run() {
             settings::cmd_set_setting,
             update::cmd_check_update,
             update::cmd_install_update,
-            update::cmd_install_to_applications,
         ])
         .setup(|app| {
-            // macOS：未安装到「应用程序」文件夹时通知前端引导一键安装
-            #[cfg(target_os = "macos")]
-            update::check_install_location(app.handle());
-
             // 自动化验证钩子：LIVESUB_AUTO_PLAY=/path/to.mp4 启动即加载（仅 macOS 已接播放内核）
             #[cfg(target_os = "macos")]
             if let Ok(path) = std::env::var("LIVESUB_AUTO_PLAY") {

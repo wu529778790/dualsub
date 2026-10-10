@@ -109,15 +109,6 @@
         </button>
       </div>
 
-      <!-- 未安装到「应用程序」文件夹：在线更新会失败，引导一键安装 -->
-      <div v-if="needInstall" class="update-bar install-bar">
-        <span>应用还没安装到「应用程序」文件夹，自动更新将不可用。</span>
-        <button class="btn small" :disabled="installing" @click.stop="installToApplications">
-          {{ installing ? "安装中…" : "一键安装" }}
-        </button>
-        <button class="bar-dismiss" title="本次不再提示" @click.stop="needInstall = false">✕</button>
-      </div>
-
       <!-- 新版本提示：应用内自动更新（下载完成后自动重启替换） -->
       <div v-if="updateInfo?.hasUpdate" class="update-bar">
         <span>新版本 v{{ updateInfo.latest }} 可用（当前 v{{ updateInfo.current }}）</span>
@@ -281,8 +272,6 @@ const wizardDownloading = ref(false);
 // 新版本检查（应用内自动更新）
 const updateInfo = ref<{ current: string; latest: string; hasUpdate: boolean; notes?: string | null } | null>(null);
 const updatePct = ref<number | null>(null); // null=未在更新中
-const needInstall = ref(false); // 未安装到「应用程序」文件夹
-const installing = ref(false);
 const recognizing = ref<{ start: number; end: number } | null>(null);
 const asrError = ref("");
 const mode = ref<"译文" | "原文" | "双语">("双语");
@@ -428,17 +417,7 @@ onMounted(async () => {
   await listen<number>("update://progress", (e) => {
     updatePct.value = e.payload;
   });
-  await listen("app://not-installed", () => {
-    needInstall.value = true;
-  });
 });
-
-async function installToApplications() {
-  installing.value = true;
-  // 成功路径：复制完成后应用从新位置重启，当前进程直接退出
-  await invoke("cmd_install_to_applications").catch((e) => (status.value = String(e)));
-  installing.value = false;
-}
 
 async function installUpdate() {
   if (updatePct.value !== null) return;
@@ -1061,27 +1040,6 @@ onMounted(async () => {
   font-size: 12px;
   color: #ffe1a1;
   max-width: 72%;
-}
-
-/* 未安装引导条：与新版本提示条同时出现时错开高度 */
-.install-bar {
-  top: 96px;
-  background: rgba(60, 40, 80, 0.92);
-  border-color: rgba(200, 150, 255, 0.4);
-  color: #e6d6ff;
-}
-
-.bar-dismiss {
-  background: none;
-  border: none;
-  color: rgba(255, 255, 255, 0.5);
-  cursor: pointer;
-  font-size: 12px;
-  padding: 2px 4px;
-}
-
-.bar-dismiss:hover {
-  color: #fff;
 }
 
 /* 新版本提示条 */

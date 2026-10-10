@@ -48,68 +48,6 @@ fn translocation_error() -> Option<String> {
     }
 }
 
-/// 从当前 exe 向上定位 .app 包路径
-fn app_bundle_path() -> Option<std::path::PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    exe.ancestors()
-        .find(|p| p.extension().is_some_and(|e| e == "app"))
-        .map(|p| p.to_path_buf())
-}
-
-/// 启动时检查应用是否已安装到「应用程序」文件夹。
-/// 没安装（从下载目录/dmg 直接运行）会触发 Gatekeeper App Translocation，
-/// app 被挂到只读目录导致在线更新无法替换文件——通知前端引导一键安装。
-pub fn check_install_location(app: &AppHandle) {
-    if !cfg!(target_os = "macos") {
-        return;
-    }
-    let Some(bundle) = app_bundle_path() else {
-        return;
-    };
-    // 接受系统级 /Applications 与用户级 ~/Applications
-    let installed = bundle
-        .parent()
-        .and_then(|p| p.file_name())
-        .is_some_and(|n| n == "Applications");
-    if !installed {
-        let _ = app.emit("app://not-installed", ());
-    }
-}
-
-/// 一键安装到「应用程序」文件夹：ditto 自复制 → 清隔离标记 → 从新位置重启。
-/// 成功路径下当前进程退出，前端 promise 不返回属预期。
-#[tauri::command]
-pub async fn cmd_install_to_applications(app: AppHandle) -> Result<(), String> {
-    if !cfg!(target_os = "macos") {
-        return Err("仅 macOS 支持此操作".into());
-    }
-    let bundle = app_bundle_path().ok_or("无法定位应用包")?;
-    let name = bundle.file_name().ok_or("无法定位应用包")?;
-    let dst = std::path::Path::new("/Applications").join(name);
-    if dst.exists() {
-        return Err("「应用程序」文件夹中已有 LiveSub-Player，请退出后直接从那里打开".into());
-    }
-    // ditto 保留元数据与权限
-    let st = std::process::Command::new("ditto")
-        .args([
-            bundle.to_string_lossy().as_ref(),
-            dst.to_string_lossy().as_ref(),
-        ])
-        .status()
-        .map_err(|e| format!("复制应用失败: {e}"))?;
-    if !st.success() {
-        return Err("复制应用到「应用程序」文件夹失败（可能没有写入权限）".into());
-    }
-    // 清掉隔离标记，避免下次启动再被 Gatekeeper 转移到只读目录
-    let _ = std::process::Command::new("xattr")
-        .args(["-rd", "com.apple.quarantine", dst.to_string_lossy().as_ref()])
-        .status();
-    // 从新位置重启
-    let _ = std::process::Command::new("open").arg(&dst).spawn();
-    app.exit(0);
-    Ok(())
-}
-
 #[tauri::command]
 pub async fn cmd_check_update(app: AppHandle) -> Result<UpdateInfo, String> {
     let current = app
