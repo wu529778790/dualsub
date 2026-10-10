@@ -818,16 +818,23 @@ onMounted(async () => {
   white-space: nowrap;
 }
 
+/* macOS 工具栏风格：无边框文字按钮，悬停出底色（实测三元素中心线已对齐，
+   之前的「不协调」来自高对比胶囊造型浮在角落） */
 .bar-btn {
   -webkit-app-region: no-drag;
-  /* 紧凑高度（~20px）：矮顶栏内与标题文字保持同一视觉行，不顶窗口上缘 */
-  padding: 2px 12px;
+  padding: 5px 10px;
+  border: none;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: transparent;
+  color: #c9c9d2;
   cursor: pointer;
   font-size: 12px;
+  line-height: 1.4;
+}
+
+.bar-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
 }
 
 /* 关键：视频区域背景透明，透出 mpv 子窗口 */
