@@ -71,7 +71,6 @@
         </template>
         <template v-else>
           <p>把视频文件拖进窗口，或点「打开」</p>
-          <button class="btn ghost" @click.stop="genTest">生成测试视频</button>
           <p class="status">{{ status }}</p>
         </template>
       </div>
@@ -517,16 +516,6 @@ async function loadVideo(path: string) {
     await invoke("cmd_player_load", { path });
     filename.value = path.split("/").pop() || path;
     loaded.value = true;
-  } catch (e) {
-    status.value = String(e);
-  }
-}
-
-async function genTest() {
-  status.value = "正在生成测试视频…";
-  try {
-    const p = await invoke<string>("cmd_gen_test_video");
-    await loadVideo(p);
   } catch (e) {
     status.value = String(e);
   }

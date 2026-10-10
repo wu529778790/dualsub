@@ -821,31 +821,3 @@ pub fn cmd_player_screenshot(app: AppHandle) -> Result<String, String> {
     player_screenshot(&app)
 }
 
-/// 生成 30s 测试视频（彩条+正弦音），开发用
-#[tauri::command]
-pub fn cmd_gen_test_video() -> Result<String, String> {
-    let dir = std::env::temp_dir().join("livesub-spike");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let out = dir.join("test.mp4");
-    if !out.exists() {
-        let st = std::process::Command::new("/opt/homebrew/bin/ffmpeg")
-            .args([
-                "-y",
-                "-f", "lavfi", "-i", "testsrc2=duration=30:size=1280x720:rate=30",
-                "-f", "lavfi", "-i", "sine=frequency=440:duration=30",
-                "-c:v", "libx264",
-                "-pix_fmt", "yuv420p",
-                "-c:a", "aac",
-                out.to_str().ok_or("路径非法")?,
-            ])
-            .output()
-            .map_err(|e| format!("ffmpeg 启动失败: {e}"))?;
-        if !st.status.success() {
-            return Err(format!(
-                "ffmpeg 失败: {}",
-                String::from_utf8_lossy(&st.stderr)
-            ));
-        }
-    }
-    Ok(out.to_string_lossy().to_string())
-}

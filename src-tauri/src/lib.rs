@@ -24,7 +24,6 @@ pub fn run() {
             player::cmd_player_toggle_fullscreen,
             player::cmd_player_get_state,
             player::cmd_player_screenshot,
-            player::cmd_gen_test_video,
             mt::cmd_mt_set_engine,
             mt::cmd_mt_get_engine,
             models::cmd_model_download,
