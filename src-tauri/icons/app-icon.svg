@@ -1,0 +1,30 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- LiveSub-Player 应用图标源文件（macOS squircle 风格，四周留透明边距） -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#241e2e" />
+      <stop offset="1" stop-color="#110f16" />
+    </linearGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe3a1" />
+      <stop offset="1" stop-color="#f2b544" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.34" r="0.6">
+      <stop offset="0" stop-color="#ffd479" stop-opacity="0.16" />
+      <stop offset="1" stop-color="#ffd479" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <!-- macOS 圆角方形底板（824x824，圆角 185，居中，四周 100 透明边距） -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)" />
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#glow)" />
+  <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="3" />
+
+  <!-- 琥珀黄播放键（与应用内 logo 同构） -->
+  <rect x="352" y="340" width="320" height="320" rx="84" fill="url(#amber)" />
+  <path d="M466 426 L598 500 L466 574 Z" fill="#1b1520" />
+
+  <!-- 双语字幕条：原文（白）+ 译文（琥珀） -->
+  <rect x="382" y="700" width="260" height="32" rx="16" fill="#ffffff" fill-opacity="0.88" />
+  <rect x="427" y="748" width="170" height="32" rx="16" fill="#ffd479" />
+</svg>
