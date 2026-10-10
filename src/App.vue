@@ -125,9 +125,10 @@
         <p v-if="status" class="status">{{ status }}</p>
       </div>
 
-      <!-- 实时字幕 Overlay（技术方案决策 B：DOM 渲染，不用 mpv sub 轨） -->
+      <!-- 实时字幕 Overlay（技术方案决策 B：DOM 渲染，不用 mpv sub 轨）
+           原则：只要识别出了原文就展示原文，翻译没到位不吞字幕 -->
       <div v-if="activeSub" class="subtitle-overlay">
-        <div v-if="mode !== '译文'" class="sub-src">{{ activeSub.text }}</div>
+        <div v-if="mode !== '译文' || !activeTranslation" class="sub-src">{{ activeSub.text }}</div>
         <div v-if="mode !== '原文' && activeTranslation" class="sub-dst">{{ activeTranslation }}</div>
         <div
           v-else-if="mode === '译文' && mtAvailable"
@@ -136,8 +137,13 @@
       </div>
 
       <!-- 识别进度指示（方案 §2.2：进度可见，绝不让人以为卡死） -->
-      <div v-if="recognizing && recognizing.start >= timePos" class="asr-progress">
-        正在识别 {{ fmtTime(recognizing.start) }} – {{ fmtTime(recognizing.end) }}
+      <div v-if="loaded && recognizing && !activeSub" class="asr-progress">
+        <template v-if="recognizing.start >= timePos">
+          正在识别 {{ fmtTime(recognizing.start) }} – {{ fmtTime(recognizing.end) }}
+        </template>
+        <template v-else>
+          字幕识别中，已处理到 {{ fmtTime(recognizing.end) }}，请稍候
+        </template>
       </div>
       <div v-if="asrError" class="asr-error">{{ asrError }}</div>
 
