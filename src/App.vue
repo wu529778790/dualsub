@@ -66,9 +66,29 @@
       <!-- 未加载视频：欢迎页 -->
       <div v-if="!loaded" class="welcome">
         <div class="welcome-brand">
-          <svg class="welcome-logo" viewBox="0 0 48 48" fill="none" aria-hidden="true">
-            <rect x="2" y="2" width="44" height="44" rx="12" fill="#ffd479" />
-            <path d="M19 16.2 33.4 24 19 31.8Z" fill="#16121c" />
+          <!-- 与应用图标 app-icon.svg 同构 -->
+          <svg class="welcome-logo" viewBox="0 0 1024 1024" fill="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="wl-bg" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#241e2e" />
+                <stop offset="1" stop-color="#110f16" />
+              </linearGradient>
+              <linearGradient id="wl-amber" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#ffe3a1" />
+                <stop offset="1" stop-color="#f2b544" />
+              </linearGradient>
+              <radialGradient id="wl-glow" cx="0.5" cy="0.34" r="0.6">
+                <stop offset="0" stop-color="#ffd479" stop-opacity="0.16" />
+                <stop offset="1" stop-color="#ffd479" stop-opacity="0" />
+              </radialGradient>
+            </defs>
+            <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#wl-bg)" />
+            <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#wl-glow)" />
+            <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="3" />
+            <rect x="352" y="340" width="320" height="320" rx="84" fill="url(#wl-amber)" />
+            <path d="M466 426 L598 500 L466 574 Z" fill="#1b1520" />
+            <rect x="382" y="700" width="260" height="32" rx="16" fill="#ffffff" fill-opacity="0.88" />
+            <rect x="427" y="748" width="170" height="32" rx="16" fill="#ffd479" />
           </svg>
           <h1 class="welcome-title">LiveSub-Player</h1>
           <p class="welcome-tagline">AI 实时语音识别字幕 · 双语翻译播放器</p>
@@ -824,10 +844,10 @@ onMounted(async () => {
 }
 
 .welcome-logo {
-  width: 60px;
-  height: 60px;
+  width: 88px;
+  height: 88px;
   display: block;
-  filter: drop-shadow(0 8px 22px rgba(255, 212, 121, 0.22));
+  filter: drop-shadow(0 10px 28px rgba(0, 0, 0, 0.45));
 }
 
 .welcome-title {
