@@ -1,7 +1,7 @@
 <template>
-  <div class="shell" :class="{ 'ui-hidden': uiHidden }" @mousemove="onUiActivity">
+  <div class="shell" :class="{ 'ui-hidden': uiHidden, 'is-empty': !loaded }" @mousemove="onUiActivity">
     <header class="topbar">
-      <span class="filename">{{ filename }}</span>
+      <span class="filename">{{ filename || "LiveSub-Player" }}</span>
       <button class="bar-btn" @click="openFile">打开</button>
       <button class="bar-btn" @click="settingsOpen = true">设置</button>
     </header>
@@ -53,10 +53,9 @@
       </p>
     </div>
 
-    <!-- 视频区域：播放中背景全透明，透出下层 mpv 画面；未加载时给不透明底色防空洞透桌；输入由前端接管 -->
+    <!-- 视频区域：播放中背景全透明，透出下层 mpv 画面；未加载时整窗不透明（见 .shell.is-empty）；输入由前端接管 -->
     <main
       class="stage"
-      :class="{ 'stage-empty': !loaded }"
       @click="onStageClick"
       @dblclick="toggleFullscreen"
       @contextmenu.prevent="openCtx"
@@ -64,25 +63,43 @@
       @dragover.prevent
       @drop.prevent="onDrop"
     >
-      <div v-if="!loaded" class="panel">
+      <!-- 未加载视频：欢迎页 -->
+      <div v-if="!loaded" class="welcome">
+        <div class="welcome-brand">
+          <svg class="welcome-logo" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+            <rect x="2" y="2" width="44" height="44" rx="12" fill="#ffd479" />
+            <path d="M19 16.2 33.4 24 19 31.8Z" fill="#16121c" />
+          </svg>
+          <h1 class="welcome-title">LiveSub-Player</h1>
+          <p class="welcome-tagline">AI 实时语音识别字幕 · 双语翻译播放器</p>
+        </div>
+
+        <button class="dropzone" :class="{ hot: dragHover }" @click="openFile">
+          <svg class="dz-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 4v10m0 0-4-4m4 4 4-4" />
+            <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+          </svg>
+          <span class="dz-main">把视频文件拖到这里，或点击选择</span>
+          <span class="dz-sub">支持 MP4、MKV、MOV、WebM 等常见格式</span>
+        </button>
+
         <template v-if="showWizard">
-          <p class="wizard-title">欢迎使用 LiveSub-Player</p>
-          <p class="wizard-text">
-            语音识别需要下载识别模型（~466MB）；<br />
-            在线翻译开箱即用；本地翻译模型（~4.4GB）可离线翻译、无视内容屏蔽。
-          </p>
-          <div class="wizard-actions">
-            <button class="btn" @click.stop="wizardDownloadAll">
-              {{ wizardDownloading ? "下载中…" : "下载模型（识别+本地翻译）" }}
-            </button>
-            <button class="btn ghost" @click.stop="wizardDismiss">仅在线翻译，直接开始</button>
+          <div class="wizard-card">
+            <p class="wizard-title">首次使用：下载离线模型</p>
+            <p class="wizard-text">
+              语音识别需要下载识别模型（约 466MB）；<br />
+              在线翻译开箱即用；本地翻译模型（约 4.4GB）可离线翻译、无视内容限制。
+            </p>
+            <div class="wizard-actions">
+              <button class="btn" @click.stop="wizardDownloadAll">
+                {{ wizardDownloading ? "下载中…" : "下载全部模型（识别 + 翻译）" }}
+              </button>
+              <button class="btn ghost" @click.stop="wizardDismiss">暂不下载，直接开始</button>
+            </div>
           </div>
-          <p class="status">{{ status }}</p>
         </template>
-        <template v-else>
-          <p>把视频文件拖进窗口，或点「打开」</p>
-          <p class="status">{{ status }}</p>
-        </template>
+
+        <p v-if="status" class="status">{{ status }}</p>
       </div>
 
       <!-- 实时字幕 Overlay（技术方案决策 B：DOM 渲染，不用 mpv sub 轨） -->
@@ -241,6 +258,8 @@ const translations = ref<{ start: number; end: number; src: string; dst: string 
 const mtAvailable = ref(true);
 const settingsOpen = ref(false);
 const speedPopOpen = ref(false);
+// 拖文件悬停在窗口上时点亮拖放区
+const dragHover = ref(false);
 // 右键菜单
 const ctxOpen = ref(false);
 const ctxX = ref(0);
@@ -721,11 +740,17 @@ function fmtTime(t: number): string {
   return h > 0 ? `${h}:${mm}:${String(s).padStart(2, "0")}` : `${mm}:${String(s).padStart(2, "0")}`;
 }
 
-// 注册 Tauri 原生拖放（拿真实文件路径）
+// 注册 Tauri 原生拖放（拿真实文件路径 + 驱动拖放区高亮）
 onMounted(async () => {
   await getCurrentWebviewWindow().onDragDropEvent((ev) => {
-    if (ev.payload.type === "drop" && ev.payload.paths.length > 0) {
-      loadVideo(ev.payload.paths[0]);
+    const t = ev.payload.type;
+    if (t === "drop") {
+      dragHover.value = false;
+      if (ev.payload.paths.length > 0) loadVideo(ev.payload.paths[0]);
+    } else if (t === "enter" || t === "over") {
+      dragHover.value = true;
+    } else {
+      dragHover.value = false;
     }
   });
 });
@@ -780,46 +805,131 @@ onMounted(async () => {
 }
 
 /* 窗口本身 transparent: true（字幕 overlay 依赖），未加载视频时 mpv 子窗口为空，
-   整窗会看穿到桌面/其他应用——此时给不透明底色；加载后必须保持透明透出画面 */
-.stage-empty {
-  background: #101014;
+   整窗会看穿到桌面/其他应用——此时整窗（含顶栏）给不透明底色；加载后必须保持透明透出画面 */
+.shell.is-empty {
+  background: radial-gradient(1100px 620px at 50% -8%, #1b1b26, #0e0e13 70%);
 }
 
-.panel {
+/* ---- 欢迎页（未加载视频） ---- */
+.welcome {
   position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 28px 40px;
-  border-radius: 12px;
-  background: rgba(15, 15, 22, 0.78);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  justify-content: center;
+  gap: 30px;
+  padding: 24px;
   text-align: center;
 }
 
-.panel p {
-  margin: 0;
+.welcome-logo {
+  width: 60px;
+  height: 60px;
+  display: block;
+  filter: drop-shadow(0 8px 22px rgba(255, 212, 121, 0.22));
+}
+
+.welcome-title {
+  margin: 16px 0 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff;
+}
+
+.welcome-tagline {
+  margin: 6px 0 0;
   font-size: 13px;
+  color: #8f8f9a;
+}
+
+.dropzone {
+  width: min(520px, 84%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 40px 32px;
+  border: 1.5px dashed rgba(255, 255, 255, 0.22);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
   color: #cfcfd8;
+  cursor: pointer;
+  transition: border-color 0.18s, background 0.18s, box-shadow 0.18s, transform 0.18s;
+}
+
+.dropzone:hover,
+.dropzone.hot {
+  border-color: #ffd479;
+  background: rgba(255, 212, 121, 0.07);
+  box-shadow: 0 0 0 1px rgba(255, 212, 121, 0.25), 0 12px 40px rgba(255, 212, 121, 0.08);
+}
+
+.dropzone.hot {
+  transform: scale(1.015);
+}
+
+.dz-icon {
+  width: 34px;
+  height: 34px;
+  color: #ffd479;
+  margin-bottom: 4px;
+}
+
+.dz-main {
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.dz-sub {
+  font-size: 12px;
+  color: #8f8f9a;
+}
+
+/* 首启向导卡片 */
+.wizard-card {
+  width: min(520px, 84%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 24px;
+  border-radius: 14px;
+  background: rgba(255, 212, 121, 0.05);
+  border: 1px solid rgba(255, 212, 121, 0.28);
+}
+
+.wizard-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffd479;
+}
+
+.wizard-text {
+  margin: 0;
+  line-height: 1.8;
+  font-size: 12px;
+  color: #b9b9c4;
 }
 
 .btn {
   padding: 8px 18px;
   border-radius: 6px;
   border: none;
-  background: #4f6ef7;
-  color: #fff;
+  background: #ffd479;
+  color: #1c1508;
+  font-weight: 600;
   cursor: pointer;
   font-size: 13px;
 }
 
 .btn.ghost {
   background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-weight: 400;
 }
 
 .status {
@@ -1006,17 +1116,7 @@ onMounted(async () => {
   white-space: nowrap;
 }
 
-/* 首启向导 */
-.wizard-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: #fff;
-}
-
-.wizard-text {
-  line-height: 1.8;
-}
-
+/* 首启向导按钮组 */
 .wizard-actions {
   display: flex;
   flex-direction: column;
@@ -1121,7 +1221,7 @@ onMounted(async () => {
   left: 0;
   height: 5px;
   border-radius: 3px;
-  background: #4f6ef7;
+  background: #ffd479;
   transition: height 0.12s;
 }
 
@@ -1227,8 +1327,9 @@ onMounted(async () => {
 }
 
 .speed-chip.on {
-  background: #4f6ef7;
-  color: #fff;
+  background: #ffd479;
+  color: #1c1508;
+  font-weight: 600;
 }
 
 /* 右键菜单 */
@@ -1304,8 +1405,9 @@ onMounted(async () => {
 }
 
 .ctx-speed.on {
-  background: #4f6ef7;
-  color: #fff;
+  background: #ffd479;
+  color: #1c1508;
+  font-weight: 600;
 }
 
 /* 播放中鼠标静止：顶栏上滑、控制栏下滑、隐藏光标 */
