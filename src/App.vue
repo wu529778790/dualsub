@@ -794,8 +794,10 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 12px;
-  /* 左侧留出 macOS 红绿灯按钮的悬浮空间（titleBarStyle: Overlay） */
-  padding: 10px 16px 10px 84px;
+  /* 高度对齐 macOS 标准标题栏（28px），内容与红绿灯按钮垂直同行；
+     左侧留出红绿灯悬浮空间（titleBarStyle: Overlay） */
+  height: 28px;
+  padding: 0 16px 0 84px;
   background: rgba(16, 16, 20, 0.72);
   -webkit-app-region: drag;
 }
