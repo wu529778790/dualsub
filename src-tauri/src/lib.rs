@@ -35,6 +35,53 @@ pub fn run() {
             update::cmd_install_update,
         ])
         .setup(|app| {
+            // 标准应用菜单：macOS 上提供 ⌘Q 退出/⌘C⌘V 编辑/最小化全屏关闭等系统默认行为；
+            // 没有菜单时 Tauri 应用不响应 ⌘Q（用户预期）
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{MenuBuilder, SubmenuBuilder};
+                let app_submenu = SubmenuBuilder::new(app, "LiveSub-Player")
+                    .about(None)
+                    .separator()
+                    .services()
+                    .separator()
+                    .hide()
+                    .hide_others()
+                    .show_all()
+                    .separator()
+                    .quit()
+                    .build()?;
+                let edit_submenu = SubmenuBuilder::new(app, "编辑")
+                    .undo()
+                    .redo()
+                    .separator()
+                    .cut()
+                    .copy()
+                    .paste()
+                    .select_all()
+                    .build()?;
+                let window_submenu = SubmenuBuilder::new(app, "窗口")
+                    .minimize()
+                    .fullscreen()
+                    .separator()
+                    .close_window()
+                    .build()?;
+                let menu = MenuBuilder::new(app)
+                    .item(&app_submenu)
+                    .item(&edit_submenu)
+                    .item(&window_submenu)
+                    .build()?;
+                app.set_menu(menu)?;
+            }
+            // 非 macOS：最小菜单保证 Ctrl+Q 可退出
+            #[cfg(not(target_os = "macos"))]
+            {
+                use tauri::menu::{MenuBuilder, MenuItem};
+                let quit = MenuItem::with_id(app, "app-quit", "退出", true, "Ctrl+Q")?;
+                let menu = MenuBuilder::new(app).items(&[&quit]).build()?;
+                app.set_menu(menu)?;
+            }
+
             // 自动化验证钩子：LIVESUB_AUTO_PLAY=/path/to.mp4 启动即加载（仅 macOS 已接播放内核）
             #[cfg(target_os = "macos")]
             if let Ok(path) = std::env::var("LIVESUB_AUTO_PLAY") {
