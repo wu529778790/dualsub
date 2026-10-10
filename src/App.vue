@@ -1,6 +1,10 @@
 <template>
   <div class="shell" :class="{ 'ui-hidden': uiHidden, 'is-empty': !loaded }" @mousemove="onUiActivity">
     <header class="topbar">
+      <svg class="topbar-icon" viewBox="0 0 48 48" aria-hidden="true">
+        <rect x="2" y="2" width="44" height="44" rx="12" fill="#ffd479" />
+        <path d="M19 16.2 33.4 24 19 31.8Z" fill="#16121c" />
+      </svg>
       <span class="filename">{{ filename || "LiveSub-Player" }}</span>
       <button class="bar-btn" @click="settingsOpen = true">设置</button>
     </header>
@@ -790,9 +794,17 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 16px;
+  /* 左侧留出 macOS 红绿灯按钮的悬浮空间（titleBarStyle: Overlay） */
+  padding: 10px 16px 10px 84px;
   background: rgba(16, 16, 20, 0.72);
   -webkit-app-region: drag;
+}
+
+.topbar-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 5px;
 }
 
 .filename {

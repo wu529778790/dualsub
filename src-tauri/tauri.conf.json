@@ -20,7 +20,9 @@
         "minHeight": 360,
         "resizable": true,
         "transparent": true,
-        "center": true
+        "center": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {
