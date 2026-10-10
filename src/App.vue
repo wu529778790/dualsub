@@ -1,31 +1,39 @@
 <template>
-  <div class="shell">
+  <div class="shell" :class="{ 'ui-hidden': uiHidden }" @mousemove="onUiActivity">
     <header class="topbar">
-      <span class="title">LiveSub-Player</span>
       <span class="filename">{{ filename }}</span>
       <button class="bar-btn" @click="openFile">打开</button>
-      <button class="bar-btn" @click="settingsOpen = !settingsOpen">设置</button>
+      <button class="bar-btn" @click="settingsOpen = true">设置</button>
     </header>
 
-    <!-- 设置面板（翻译引擎 + 模型管理） -->
-    <div v-if="settingsOpen" class="settings-panel">
+    <!-- 设置抽屉：右侧滑出，点遮罩或 ✕ 关闭 -->
+    <transition name="fade">
+      <div v-if="settingsOpen" class="drawer-mask" @click="settingsOpen = false" />
+    </transition>
+    <div class="drawer" :class="{ open: settingsOpen }">
+      <div class="drawer-head">
+        <span>设置</span>
+        <button class="drawer-close" title="关闭" @click="settingsOpen = false">✕</button>
+      </div>
+
+      <div class="drawer-section">常规</div>
       <label class="set-row">
         <span>翻译引擎</span>
         <select :value="engine" @change="changeEngine">
-          <option value="auto">自动（在线优先，失败转本地）</option>
-          <option value="online">仅在线</option>
-          <option value="local">仅本地模型</option>
+          <option value="auto">自动（优先在线，失败用本地）</option>
+          <option value="online">仅在线翻译</option>
+          <option value="local">仅本地模型（离线）</option>
         </select>
       </label>
       <label class="set-row">
-        <span>识别档位</span>
+        <span>语音识别</span>
         <select :value="whisperModel" @change="changeWhisperModel">
-          <option value="small">small（均衡，默认）</option>
-          <option value="base">base（快速，低配机）</option>
+          <option value="small">均衡（默认，推荐）</option>
+          <option value="base">快速（电脑配置较低时）</option>
         </select>
       </label>
 
-      <div class="set-section">模型管理</div>
+      <div class="drawer-section">模型管理</div>
       <div v-for="m in modelStatus" :key="m.name" class="model-row">
         <span class="model-desc">{{ m.desc }}</span>
         <span v-if="m.installed" class="model-ok">已装 {{ m.sizeMb }}MB</span>
@@ -38,10 +46,10 @@
           v-if="m.installed"
           class="btn small ghost"
           @click="removeModel(m.name)"
-        >删除</button>
+        >{{ pendingDelete === m.name ? "确认删除" : "删除" }}</button>
       </div>
       <p class="set-hint">
-        在线翻译需可访问 Google（自动使用系统代理）；本地翻译模型全离线、无内容屏蔽
+        在线翻译需要能访问 Google（自动走系统代理）；本地翻译完全离线，没有内容限制。
       </p>
     </div>
 
@@ -51,6 +59,8 @@
       :class="{ 'stage-empty': !loaded }"
       @click="onStageClick"
       @dblclick="toggleFullscreen"
+      @contextmenu.prevent="openCtx"
+      @wheel.prevent="onWheel"
       @dragover.prevent
       @drop.prevent="onDrop"
     >
@@ -132,15 +142,27 @@
         </div>
       </div>
       <span class="time">/ {{ fmtTime(duration) }}</span>
-      <select class="speed" :value="speed" @change="changeSpeed">
-        <option :value="0.5">0.5x</option>
-        <option :value="0.75">0.75x</option>
-        <option :value="1">1x</option>
-        <option :value="1.25">1.25x</option>
-        <option :value="1.5">1.5x</option>
-        <option :value="2">2x</option>
-        <option :value="3">3x</option>
-      </select>
+      <div class="speed-wrap">
+        <button class="speed-btn" title="倍速（滚轮+Shift 微调，[ ] 快捷键）" @click.stop="speedPopOpen = !speedPopOpen">
+          {{ fmtSpeed(speed) }}
+        </button>
+        <div v-if="speedPopOpen" class="speed-pop" @click.stop>
+          <div class="speed-grid">
+            <button
+              v-for="s in SPEED_PRESETS"
+              :key="s"
+              class="speed-chip"
+              :class="{ on: speed === s }"
+              @click="setSpeed(s)"
+            >{{ fmtSpeed(s) }}</button>
+          </div>
+          <div class="speed-grid">
+            <button class="speed-chip" @click="setSpeed(speed - 0.1)">−0.1</button>
+            <button class="speed-chip" @click="setSpeed(1)">重置</button>
+            <button class="speed-chip" @click="setSpeed(speed + 0.1)">+0.1</button>
+          </div>
+        </div>
+      </div>
       <span class="vol-label">音量</span>
       <input
         class="vol"
@@ -154,6 +176,35 @@
       <button class="ctl-btn" title="截图到桌面（S）" @click="screenshot">📷</button>
       <button class="ctl-btn" @click="toggleFullscreen">⛶</button>
     </footer>
+
+    <!-- 右键菜单 -->
+    <div v-if="ctxOpen" class="ctx-mask" @click="ctxOpen = false" @contextmenu.prevent="ctxOpen = false" />
+    <div v-if="ctxOpen" class="ctx-menu" :style="{ left: ctxX + 'px', top: ctxY + 'px' }">
+      <button class="ctx-item" @click="ctxOpen = false; openFile()">打开文件…</button>
+      <button class="ctx-item" @click="ctxOpen = false; togglePause()">{{ paused ? "播放" : "暂停" }}</button>
+      <button class="ctx-item" @click="ctxOpen = false; screenshot()">截图</button>
+      <button class="ctx-item" @click="ctxOpen = false; toggleFullscreen()">全屏</button>
+      <div class="ctx-divider" />
+      <div class="ctx-label">字幕模式</div>
+      <button
+        v-for="m in ['双语', '译文', '原文']"
+        :key="m"
+        class="ctx-item"
+        :class="{ on: mode === m }"
+        @click="mode = m; ctxOpen = false"
+      >{{ mode === m ? "✓ " : "" }}{{ m }}</button>
+      <div class="ctx-divider" />
+      <div class="ctx-label">倍速</div>
+      <div class="ctx-speeds">
+        <button
+          v-for="s in SPEED_PRESETS"
+          :key="s"
+          class="ctx-speed"
+          :class="{ on: speed === s }"
+          @click="setSpeed(s); ctxOpen = false"
+        >{{ fmtSpeed(s) }}</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -165,6 +216,8 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open } from "@tauri-apps/plugin-dialog";
 
 const VIDEO_EXTS = ["mp4", "mkv", "avi", "mov", "webm", "m4v", "ts", "flv", "wmv", "rmvb"];
+
+const SPEED_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 const filename = ref("");
 const status = ref("");
@@ -187,6 +240,17 @@ const subs = ref<Sub[]>([]);
 const translations = ref<{ start: number; end: number; src: string; dst: string }[]>([]);
 const mtAvailable = ref(true);
 const settingsOpen = ref(false);
+const speedPopOpen = ref(false);
+// 右键菜单
+const ctxOpen = ref(false);
+const ctxX = ref(0);
+const ctxY = ref(0);
+// 模型删除二次确认（3s 内再点一次才真正删）
+const pendingDelete = ref("");
+let pendingDeleteTimer: number | undefined;
+// 播放中鼠标静止自动隐藏顶栏/控制栏
+const idle = ref(false);
+let idleTimer: number | undefined;
 const engine = ref("auto");
 const needLocalModel = ref(false);
 const downloading = ref(false);
@@ -371,8 +435,18 @@ async function download(name: string) {
 }
 
 async function removeModel(name: string) {
+  // 二次确认：3s 内再点一次才真正删除（防误触删掉几 GB 的模型）
+  if (pendingDelete.value !== name) {
+    pendingDelete.value = name;
+    window.clearTimeout(pendingDeleteTimer);
+    pendingDeleteTimer = window.setTimeout(() => (pendingDelete.value = ""), 3000);
+    return;
+  }
+  pendingDelete.value = "";
+  window.clearTimeout(pendingDeleteTimer);
   await invoke("cmd_model_delete", { name }).catch((e) => (status.value = String(e)));
   await refreshModelStatus();
+  showToast("模型已删除");
 }
 
 async function changeWhisperModel(e: Event) {
@@ -461,11 +535,56 @@ async function changeVolume(e: Event) {
   await invoke("cmd_player_set_volume", { volume: v }).catch((e) => (status.value = String(e)));
 }
 
-async function changeSpeed(e: Event) {
-  const s = Number((e.target as HTMLSelectElement).value);
-  speed.value = s;
-  await invoke("cmd_player_set_speed", { speed: s }).catch((e) => (status.value = String(e)));
+function fmtSpeed(s: number): string {
+  return `${Math.round(s * 100) / 100}x`;
 }
+
+async function setSpeed(s: number) {
+  // 0.1 步进、钳制 0.1~3，四舍五入消除浮点误差
+  const next = Math.min(3, Math.max(0.1, Math.round(s * 10) / 10));
+  speed.value = next;
+  speedPopOpen.value = false;
+  await invoke("cmd_player_set_speed", { speed: next }).catch((e) => (status.value = String(e)));
+  showToast(`倍速 ${fmtSpeed(next)}`);
+}
+
+// ---- 滚轮：音量；Shift+滚轮：倍速微调（PotPlayer 习惯） ----
+async function onWheel(e: WheelEvent) {
+  if (!loaded.value) return;
+  if (e.shiftKey) {
+    await setSpeed(speed.value + (e.deltaY < 0 ? 0.1 : -0.1));
+  } else {
+    const v = Math.min(100, Math.max(0, volume.value + (e.deltaY < 0 ? 5 : -5)));
+    await changeVolumeTo(v);
+    showToast(`音量 ${Math.round(v)}`);
+  }
+}
+
+// ---- 右键菜单（防溢出屏幕） ----
+function openCtx(e: MouseEvent) {
+  ctxX.value = Math.min(e.clientX, window.innerWidth - 230);
+  ctxY.value = Math.min(e.clientY, window.innerHeight - 420);
+  ctxOpen.value = true;
+}
+
+// ---- 播放中鼠标静止 2.5s 隐藏顶栏/控制栏，动一下即恢复 ----
+function onUiActivity() {
+  idle.value = false;
+  window.clearTimeout(idleTimer);
+  idleTimer = window.setTimeout(() => {
+    if (
+      loaded.value && !paused.value && !dragging.value &&
+      !settingsOpen.value && !speedPopOpen.value && !ctxOpen.value
+    ) {
+      idle.value = true;
+    }
+  }, 2500);
+}
+const uiHidden = computed(
+  () =>
+    idle.value && loaded.value && !paused.value && !dragging.value &&
+    !settingsOpen.value && !speedPopOpen.value && !ctxOpen.value
+);
 
 // ---- 进度条拖动 + 悬停预览 ----
 function ratioAt(e: PointerEvent): number {
@@ -523,6 +642,10 @@ async function loadVideo(path: string) {
 
 // ---- 输入接管（技术方案决策 A：视频区点击全在 WebView） ----
 function onStageClick() {
+  if (speedPopOpen.value) {
+    speedPopOpen.value = false;
+    return;
+  }
   if (loaded.value) togglePause();
 }
 
@@ -563,6 +686,17 @@ function onKey(e: KeyboardEvent) {
     case "s":
     case "S":
       screenshot();
+      break;
+    case "[":
+      setSpeed(speed.value - 0.1);
+      break;
+    case "]":
+      setSpeed(speed.value + 0.1);
+      break;
+    case "Escape":
+      ctxOpen.value = false;
+      speedPopOpen.value = false;
+      settingsOpen.value = false;
       break;
   }
 }
@@ -609,11 +743,6 @@ onMounted(async () => {
   padding: 10px 16px;
   background: rgba(16, 16, 20, 0.72);
   -webkit-app-region: drag;
-}
-
-.title {
-  font-size: 15px;
-  font-weight: 700;
 }
 
 .filename {
@@ -759,25 +888,82 @@ onMounted(async () => {
   pointer-events: none;
 }
 
-/* 设置面板 */
-.settings-panel {
-  position: absolute;
-  top: 44px;
-  right: 12px;
-  z-index: 20;
-  padding: 14px 16px;
-  border-radius: 10px;
-  background: rgba(24, 24, 30, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+/* 设置抽屉 */
+.drawer-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 320px;
+  z-index: 31;
+  padding: 16px 18px;
+  background: rgba(22, 22, 28, 0.97);
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.45);
+  transform: translateX(105%);
+  transition: transform 0.22s ease;
+  overflow-y: auto;
+}
+
+.drawer.open {
+  transform: translateX(0);
+}
+
+.drawer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.drawer-close {
+  background: none;
+  border: none;
+  color: #9a9aa5;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.drawer-close:hover {
+  color: #fff;
+}
+
+.drawer-section {
+  margin: 14px 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #8f8f9a;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .set-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   font-size: 13px;
-  margin: 0;
+  margin: 0 0 10px;
 }
 
 .set-row select {
@@ -794,15 +980,6 @@ onMounted(async () => {
   font-size: 11px;
   color: #8f8f9a;
   max-width: 320px;
-}
-
-.set-section {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
-  font-size: 12px;
-  font-weight: 700;
-  color: #cfcfd8;
 }
 
 .model-row {
@@ -990,13 +1167,157 @@ onMounted(async () => {
   z-index: 10;
 }
 
-.speed {
+/* 倍速按钮 + 弹层 */
+.speed-wrap {
+  position: relative;
+}
+
+.speed-btn {
+  min-width: 48px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 6px;
-  padding: 4px 6px;
   font-size: 12px;
+  cursor: pointer;
+}
+
+.speed-pop {
+  position: absolute;
+  bottom: 36px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(24, 24, 30, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.speed-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.speed-chip {
+  padding: 5px 0;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8e8ee;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.speed-chip:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.speed-chip.on {
+  background: #4f6ef7;
+  color: #fff;
+}
+
+/* 右键菜单 */
+.ctx-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.ctx-menu {
+  position: fixed;
+  z-index: 41;
+  min-width: 210px;
+  padding: 6px;
+  border-radius: 10px;
+  background: rgba(24, 24, 30, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+}
+
+.ctx-item {
+  text-align: left;
+  padding: 7px 12px;
+  border: none;
+  background: none;
+  color: #e8e8ee;
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ctx-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.ctx-item.on {
+  color: #ffd479;
+}
+
+.ctx-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 6px 4px;
+}
+
+.ctx-label {
+  padding: 2px 12px 4px;
+  font-size: 11px;
+  color: #8f8f9a;
+}
+
+.ctx-speeds {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 0 6px 6px;
+}
+
+.ctx-speed {
+  padding: 5px 0;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8e8ee;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ctx-speed:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.ctx-speed.on {
+  background: #4f6ef7;
+  color: #fff;
+}
+
+/* 播放中鼠标静止：顶栏上滑、控制栏下滑、隐藏光标 */
+.topbar,
+.controls {
+  transition: transform 0.25s ease;
+}
+
+.ui-hidden .topbar {
+  transform: translateY(-100%);
+}
+
+.ui-hidden .controls {
+  transform: translateY(100%);
+}
+
+.ui-hidden {
+  cursor: none;
 }
 
 .vol-label {
