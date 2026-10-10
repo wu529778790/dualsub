@@ -387,7 +387,7 @@ onMounted(async () => {
       );
     }
   );
-  await listen<{ name: string }>("models://done", async (e) => {
+  await listen<{ name: string }>("models://done", async () => {
     downloading.value = false;
     downloadingName.value = "";
     needLocalModel.value = false;
@@ -408,7 +408,12 @@ onMounted(async () => {
     !modelStatus.value.find((m) => m.name === "whisper-small")?.installed &&
     (await invoke<string>("cmd_get_setting", { key: "wizard_done" })) !== "1";
   // 新版本检查（静默失败即可）
-  updateInfo.value = await invoke("cmd_check_update").catch(() => null);
+  updateInfo.value = await invoke<{
+    current: string;
+    latest: string;
+    hasUpdate: boolean;
+    notes?: string | null;
+  }>("cmd_check_update").catch(() => null);
   await listen<number>("update://progress", (e) => {
     updatePct.value = e.payload;
   });
@@ -625,7 +630,7 @@ async function onDrop(e: DragEvent) {
   const files = e.dataTransfer?.files;
   if (!files?.length) return;
   // Tauri 拖放：用 webviewWindow 事件拿真实路径（file:// 输入只兜底）
-  const path = decodeURIComponent(files[0].path || "");
+  const path = decodeURIComponent((files[0] as File & { path?: string }).path || "");
   if (path) await loadVideo(path);
 }
 
