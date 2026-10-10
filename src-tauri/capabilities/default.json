@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "主窗口默认能力：核心事件、窗口操作、文件对话框；M1 起按需追加",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:default"]
+  "permissions": ["core:default", "dialog:default", "updater:default"]
 }

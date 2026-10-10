@@ -9,10 +9,12 @@ mod update;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(player::PlayerState::default())
         .manage(asr::AsrState::default())
         .manage(mt::MtState::default())
         .manage(models::ModelsState::default())
+        .manage(update::UpdateState::default())
         .invoke_handler(tauri::generate_handler![
             player::cmd_player_load,
             player::cmd_player_toggle_pause,
@@ -31,7 +33,7 @@ pub fn run() {
             settings::cmd_get_setting,
             settings::cmd_set_setting,
             update::cmd_check_update,
-            update::cmd_open_releases,
+            update::cmd_install_update,
         ])
         .setup(|app| {
             // 自动化验证钩子：LIVESUB_AUTO_PLAY=/path/to.mp4 启动即加载（仅 macOS 已接播放内核）

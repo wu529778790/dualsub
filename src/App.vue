@@ -100,10 +100,11 @@
         </button>
       </div>
 
-      <!-- 新版本提示（替代 updater：未签名 app 不走自动更新） -->
+      <!-- 新版本提示：应用内自动更新（下载完成后自动重启替换） -->
       <div v-if="updateInfo?.hasUpdate" class="update-bar">
         <span>新版本 v{{ updateInfo.latest }} 可用（当前 v{{ updateInfo.current }}）</span>
-        <button class="btn small" @click.stop="openReleases">去下载</button>
+        <button v-if="updatePct === null" class="btn small" @click.stop="installUpdate">立即更新</button>
+        <button v-else class="btn small" disabled>更新中 {{ updatePct }}%</button>
       </div>
 
       <!-- 操作反馈 OSD（截图/快进快退等，2.5s 自动消失） -->
@@ -205,8 +206,9 @@ const whisperModel = ref("small");
 const showWizard = ref(false);
 const wizardDownloading = ref(false);
 
-// 新版本提示
-const updateInfo = ref<{ current: string; latest: string; hasUpdate: boolean } | null>(null);
+// 新版本检查（应用内自动更新）
+const updateInfo = ref<{ current: string; latest: string; hasUpdate: boolean; notes?: string | null } | null>(null);
+const updatePct = ref<number | null>(null); // null=未在更新中
 const recognizing = ref<{ start: number; end: number } | null>(null);
 const asrError = ref("");
 const mode = ref<"译文" | "原文" | "双语">("双语");
@@ -344,10 +346,20 @@ onMounted(async () => {
     (await invoke<string>("cmd_get_setting", { key: "wizard_done" })) !== "1";
   // 新版本检查（静默失败即可）
   updateInfo.value = await invoke("cmd_check_update").catch(() => null);
+  await listen<number>("update://progress", (e) => {
+    updatePct.value = e.payload;
+  });
 });
 
-async function openReleases() {
-  await invoke("cmd_open_releases").catch((e) => (status.value = String(e)));
+async function installUpdate() {
+  if (updatePct.value !== null) return;
+  updatePct.value = 0;
+  const ok = await invoke("cmd_install_update").catch((e) => {
+    status.value = String(e);
+    return false;
+  });
+  if (!ok && updatePct.value !== null && updatePct.value < 100) updatePct.value = null;
+  // 成功路径：安装完成后应用自动重启替换，无需收尾
 }
 
 async function refreshModelStatus() {
