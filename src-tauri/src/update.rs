@@ -28,26 +28,6 @@ pub struct UpdateInfo {
     pub notes: Option<String>,
 }
 
-/// macOS App Translocation 检测：从「下载」等位置直接运行带隔离标记的 app 时，
-/// Gatekeeper 会把 app 挂载到只读临时目录（路径含 /AppTranslocation/），
-/// 更新器无法在该位置替换文件（os error 30 Read-only file system）。
-/// 提前拦截并给出可操作指引，而不是让用户面对裸系统错误。
-fn translocation_error() -> Option<String> {
-    if !cfg!(target_os = "macos") {
-        return None;
-    }
-    let exe = std::env::current_exe().ok()?;
-    if exe.to_string_lossy().contains("/AppTranslocation/") {
-        Some(
-            "应用正运行在系统临时位置（还没移入「应用程序」文件夹），无法自动更新。\
-             请退出应用，把 LiveSub-Player 拖入「应用程序」文件夹，再从那里打开后重试更新。"
-                .to_string(),
-        )
-    } else {
-        None
-    }
-}
-
 #[tauri::command]
 pub async fn cmd_check_update(app: AppHandle) -> Result<UpdateInfo, String> {
     let current = app
@@ -87,11 +67,6 @@ pub async fn cmd_check_update(app: AppHandle) -> Result<UpdateInfo, String> {
 /// 成功路径下 install 内部会替换应用并重启进程，前端无需收尾
 #[tauri::command]
 pub async fn cmd_install_update(app: AppHandle) -> Result<(), String> {
-    // 下载前先拦：Translocation 环境下载完也装不进去，省一次全量下载
-    if let Some(msg) = translocation_error() {
-        return Err(msg);
-    }
-
     let update = {
         let state: State<UpdateState> = app.state();
         let mut pending = state.pending.lock().unwrap();
