@@ -89,6 +89,19 @@ jobs:
           cd src-tauri/target/release/bundle/macos
           zip -qry "$GITHUB_WORKSPACE/LiveSub-Player-macOS.zip" LiveSub-Player.app
 
+      # 标准 macOS 安装方式：打开 dmg 拖入 Applications。
+      # 不能用 tauri bundler 的 dmg——它在 dylibbundler 内嵌 libmpv 之前打包，会缺运行时；
+      # 必须在内嵌+重签之后手工 hdiutil 制作（app + Applications 软链 = 拖拽窗口）
+      - name: 制作 macOS 安装 dmg（拖入 Applications）
+        if: matrix.os == 'macos-latest'
+        run: |
+          mkdir -p dmg-stage
+          cp -R src-tauri/target/release/bundle/macos/LiveSub-Player.app dmg-stage/
+          ln -s /Applications dmg-stage/Applications
+          hdiutil create -volname "LiveSub-Player" -srcfolder dmg-stage -ov -format UDZO \
+            "$GITHUB_WORKSPACE/LiveSub-Player.dmg"
+          rm -rf dmg-stage
+
       # 自动更新包：必须在内嵌 libmpv + 重签之后再打 tar（bundler 自带产物是内嵌前的），
       # 手工 minisign 签名（createUpdaterArtifacts 保持 false，本地构建无需密钥）
       - name: 打自动更新包并签名（macOS）
@@ -129,6 +142,7 @@ jobs:
           name: livesub-macos
           path: |
             LiveSub-Player-macOS.zip
+            LiveSub-Player.dmg
             LiveSub-Player.app.tar.gz
             LiveSub-Player.app.tar.gz.sig
           if-no-files-found: error
@@ -184,6 +198,7 @@ jobs:
             artifacts/*.exe
             artifacts/*.sig
             artifacts/*.zip
+            artifacts/*.dmg
             artifacts/*.tar.gz
             latest.json
 
