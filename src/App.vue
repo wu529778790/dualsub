@@ -820,7 +820,8 @@ onMounted(async () => {
 
 .bar-btn {
   -webkit-app-region: no-drag;
-  padding: 4px 14px;
+  /* 紧凑高度（~20px）：矮顶栏内与标题文字保持同一视觉行，不顶窗口上缘 */
+  padding: 2px 12px;
   border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.25);
   background: rgba(255, 255, 255, 0.08);
