@@ -77,7 +77,7 @@ pub fn run() {
             #[cfg(not(target_os = "macos"))]
             {
                 use tauri::menu::{MenuBuilder, MenuItem};
-                let quit = MenuItem::with_id(app, "app-quit", "退出", true, "Ctrl+Q")?;
+                let quit = MenuItem::with_id(app, "app-quit", "退出", true, Some("Ctrl+Q"))?;
                 let menu = MenuBuilder::new(app).items(&[&quit]).build()?;
                 app.set_menu(menu)?;
             }
