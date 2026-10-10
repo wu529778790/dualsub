@@ -7,3 +7,4 @@ src-tauri/gen/
 
 # 更新签名私钥（丢了无法再发更新，泄露可被推恶意更新）——只留本机备份，绝不入仓
 keys/
+.playwright-mcp/
