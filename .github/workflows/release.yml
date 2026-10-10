@@ -154,10 +154,16 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v5
+
       - uses: actions/download-artifact@v5
         with:
           path: artifacts
           merge-multiple: true
+
+      # Release 描述 = annotated tag 的注释（发版时直接写好 1/2/3，不用自动 changelog）
+      - name: 读取版本说明（tag 注释）
+        run: git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" > release-notes.md
 
       - name: 生成 latest.json（自动更新清单）
         env:
@@ -170,13 +176,15 @@ jobs:
           repo = os.environ["REPO"]
           version = tag[1:] if tag.startswith("v") else tag
           base = f"https://github.com/{repo}/releases/download/{tag}"
+          # 更新弹窗 notes 取版本说明第一行非空文本
+          notes = next((l.strip() for l in open("release-notes.md") if l.strip()), f"LiveSub-Player {tag}")
           # 签名文件是 minisign 多行文本，必须原样读入再 json 序列化（不能 shell 拼接）
           mac_sig = open("artifacts/LiveSub-Player.app.tar.gz.sig").read().strip()
           win_exe = next(f for f in os.listdir("artifacts") if f.endswith("-setup.exe"))
           win_sig = open(os.path.join("artifacts", win_exe + ".sig")).read().strip()
           data = {
               "version": version,
-              "notes": f"LiveSub-Player {tag}",
+              "notes": notes,
               "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
               "platforms": {
                   "darwin-aarch64": {"signature": mac_sig, "url": f"{base}/LiveSub-Player.app.tar.gz"},
@@ -192,7 +200,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           prerelease: false
-          generate_release_notes: true
+          body_path: release-notes.md
           files: |
             artifacts/*.deb
             artifacts/*.exe
