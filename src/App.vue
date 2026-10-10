@@ -2,7 +2,6 @@
   <div class="shell" :class="{ 'ui-hidden': uiHidden, 'is-empty': !loaded }" @mousemove="onUiActivity">
     <header class="topbar">
       <span class="filename">{{ filename || "LiveSub-Player" }}</span>
-      <button class="bar-btn" @click="openFile">打开</button>
       <button class="bar-btn" @click="settingsOpen = true">设置</button>
     </header>
 
@@ -85,10 +84,10 @@
             <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#wl-bg)" />
             <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#wl-glow)" />
             <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="3" />
-            <rect x="352" y="340" width="320" height="320" rx="84" fill="url(#wl-amber)" />
-            <path d="M466 426 L598 500 L466 574 Z" fill="#1b1520" />
-            <rect x="382" y="700" width="260" height="32" rx="16" fill="#ffffff" fill-opacity="0.88" />
-            <rect x="427" y="748" width="170" height="32" rx="16" fill="#ffd479" />
+            <rect x="352" y="300" width="320" height="320" rx="84" fill="url(#wl-amber)" />
+            <path d="M466 386 L598 460 L466 534 Z" fill="#1b1520" />
+            <rect x="382" y="660" width="260" height="32" rx="16" fill="#ffffff" fill-opacity="0.88" />
+            <rect x="427" y="708" width="170" height="32" rx="16" fill="#ffd479" />
           </svg>
           <h1 class="welcome-title">LiveSub-Player</h1>
           <p class="welcome-tagline">AI 实时语音识别字幕 · 双语翻译播放器</p>
@@ -841,6 +840,12 @@ onMounted(async () => {
   gap: 30px;
   padding: 24px;
   text-align: center;
+}
+
+.welcome-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .welcome-logo {

@@ -20,11 +20,11 @@
   <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#glow)" />
   <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="3" />
 
-  <!-- 琥珀黄播放键（与应用内 logo 同构） -->
-  <rect x="352" y="340" width="320" height="320" rx="84" fill="url(#amber)" />
-  <path d="M466 426 L598 500 L466 574 Z" fill="#1b1520" />
+  <!-- 琥珀黄播放键（与应用内 logo 同构，整体光学居中） -->
+  <rect x="352" y="300" width="320" height="320" rx="84" fill="url(#amber)" />
+  <path d="M466 386 L598 460 L466 534 Z" fill="#1b1520" />
 
   <!-- 双语字幕条：原文（白）+ 译文（琥珀） -->
-  <rect x="382" y="700" width="260" height="32" rx="16" fill="#ffffff" fill-opacity="0.88" />
-  <rect x="427" y="748" width="170" height="32" rx="16" fill="#ffd479" />
+  <rect x="382" y="660" width="260" height="32" rx="16" fill="#ffffff" fill-opacity="0.88" />
+  <rect x="427" y="708" width="170" height="32" rx="16" fill="#ffd479" />
 </svg>
